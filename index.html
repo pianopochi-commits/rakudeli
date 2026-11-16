@@ -1,0 +1,2381 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>らくデリ (RakuDeli) - 片手・親指 × 先回りAI宅配アプリ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@600;700;800;900&family=Noto+Sans+JP:wght@500;700;900&display=swap" rel="stylesheet" />
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+    body {
+      font-family: 'Noto Sans JP', 'Inter', sans-serif;
+      margin: 0;
+      padding: 0;
+      overscroll-behavior-y: none;
+    }
+    .app-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .app-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .app-scroll::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.45);
+      border-radius: 9999px;
+    }
+    .swipe-card-fg {
+      touch-action: pan-y;
+      user-select: none;
+      will-change: transform;
+    }
+    @keyframes popCheck {
+      0% { transform: scale(0.4); opacity: 0; }
+      70% { transform: scale(1.12); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    .animate-pop {
+      animation: popCheck 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+    }
+    @keyframes micPulse {
+      0% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.65); }
+      70% { box-shadow: 0 0 0 18px rgba(37, 99, 235, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(37, 99, 235, 0); }
+    }
+    .mic-listening {
+      animation: micPulse 1.4s infinite;
+    }
+    .sheet-backdrop {
+      transition: opacity 0.25s ease;
+    }
+    .sheet-panel {
+      transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-800 min-h-screen flex justify-center">
+
+  <!-- モバイルファースト・スマホアプリ本体 -->
+  <main class="w-full max-w-[430px] h-[100dvh] bg-[#F8FAFC] relative overflow-hidden flex flex-col shadow-2xl">
+
+    <!-- ========================================================================
+         締め切り15分前プッシュ通知風バナー
+    ========================================================================= -->
+    <div id="push-banner"
+         role="alert"
+         onclick="handleNotificationTap()"
+         class="cursor-pointer absolute top-2.5 left-3 right-3 z-50 bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3.5 shadow-2xl border border-slate-700/80 flex items-start gap-3 transition-transform duration-300 -translate-y-[180%]">
+      <div class="w-10 h-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center text-xl shrink-0 font-black">
+        ⏰
+      </div>
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center justify-between gap-2 mb-0.5">
+          <span class="text-[11px] font-black text-amber-400 tracking-wide">らくデリ AIお知らせ</span>
+          <span class="text-[10px] text-slate-400">たった今</span>
+        </div>
+        <p class="text-xs font-black text-white leading-snug">
+          ⏰ 注文締め切りまであと15分！
+        </p>
+        <p id="push-banner-desc" class="text-[11px] text-slate-300 leading-snug mt-0.5">
+          そろそろ牛乳・赤たまご・紙おむつが切れる頃です。タップして確認 ›
+        </p>
+      </div>
+      <button type="button" onclick="event.stopPropagation(); hidePushNotification();" class="text-slate-400 hover:text-white text-sm font-bold px-1">
+        ✕
+      </button>
+    </div>
+
+    <!-- 操作フィードバック用トースト -->
+    <div id="toast-msg"
+         class="pointer-events-none absolute bottom-24 left-4 right-4 z-40 flex justify-center opacity-0 translate-y-2 transition-all duration-200">
+      <div id="toast-text" class="bg-slate-900/95 text-white text-xs font-black px-4 py-2.5 rounded-full shadow-lg border border-slate-700 text-center">
+        カートに追加しました
+      </div>
+    </div>
+
+    <!-- ========================================================================
+         上部ヘッダー
+    ========================================================================= -->
+    <header class="bg-white px-4 pt-3 pb-2.5 border-b border-slate-200/80 flex items-center justify-between shrink-0">
+      <div class="flex items-center gap-2">
+        <span class="w-8 h-8 rounded-xl bg-[#10B981] text-white flex items-center justify-center text-base font-black shadow-sm">
+          🛒
+        </span>
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-black text-base text-slate-900 tracking-tight">らくデリ</span>
+            <span id="ai-mode-badge" class="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">AIデモ稼働中</span>
+          </div>
+          <p class="text-[10px] text-slate-500 font-bold">締切まであと15分（本日18:00〜便）</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-1.5">
+        <!-- 通知テストベル -->
+        <button type="button"
+                onclick="triggerDeadlineNotification()"
+                title="締め切り通知テスト"
+                class="relative bg-amber-50 hover:bg-amber-100 active:scale-95 text-amber-800 border border-amber-200 px-2.5 py-2 rounded-xl flex items-center gap-1 text-xs font-black transition-all">
+          <span>🔔</span>
+          <span class="w-2 h-2 rounded-full bg-red-500"></span>
+        </button>
+
+        <!-- AI設定ボタン -->
+        <button type="button"
+                onclick="openAiSettingsSheet()"
+                title="AI設定"
+                class="bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-800 border border-slate-200 px-2.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1">
+          <span>⚙️</span>
+          <span>AI設定</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- ========================================================================
+         画面1：ホーム画面
+    ========================================================================= -->
+    <section id="screen-home" class="flex-1 overflow-y-auto app-scroll px-4 pt-3 pb-28 space-y-3.5">
+
+      <!-- 1. AI先回り予測バナー -->
+      <button type="button"
+              onclick="openAiProactiveSheet()"
+              class="w-full text-left bg-gradient-to-r from-slate-900 via-blue-950 to-emerald-950 text-white rounded-2xl p-3.5 shadow-md active:scale-[0.98] transition-all flex items-center justify-between gap-2.5 border border-blue-800/40">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-10 h-10 rounded-2xl bg-white/15 flex items-center justify-center text-xl shrink-0">
+            🤖
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5 mb-0.5 flex-wrap">
+              <span class="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full">AI先回り予測</span>
+              <span id="home-profile-chip" class="text-[10px] font-bold text-emerald-300">0歳児育児中</span>
+            </div>
+            <p id="home-proactive-summary" class="text-xs font-black text-white truncate">
+              牛乳・赤たまご・紙おむつが切れそうです
+            </p>
+            <p class="text-[10px] text-slate-300 truncate">タップして1タップでまとめて追加 ›</p>
+          </div>
+        </div>
+        <span class="bg-[#10B981] text-white text-xs font-black px-3 py-2 rounded-xl shrink-0 shadow">
+          確認
+        </span>
+      </button>
+
+      <!-- 2. 一括カートインカード（右上にコンパクトな「別のセット ↻」を配置） -->
+      <div id="bundle-card-container"></div>
+
+      <!-- 3. 親指ゾーン：4つの大きなカテゴリ切り替えボタン -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <h2 class="text-xs font-black text-slate-700 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
+            <span>カテゴリを選ぶ（片手1タップ）</span>
+          </h2>
+          <span class="text-[10px] font-bold text-slate-400">全4カテゴリ</span>
+        </div>
+        <div id="category-tabs" class="grid grid-cols-4 gap-2"></div>
+      </div>
+
+      <!-- 4. カテゴリ別「いつもの定番」1タップ追加（2列グリッド） -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <h2 id="staples-heading" class="text-sm font-black text-slate-900">
+            🍳 食品のいつもの定番
+          </h2>
+          <span class="text-[10px] font-bold text-[#059669] bg-emerald-50 px-2 py-0.5 rounded-full">1タップ追加</span>
+        </div>
+        <div id="staples-grid" class="grid grid-cols-2 gap-2.5"></div>
+      </div>
+
+      <!-- 5. 右スワイプで直感カートインリスト -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <h2 class="text-sm font-black text-slate-900">
+            👉 右へスワイプでカートイン
+          </h2>
+          <span class="text-[10px] font-bold text-slate-500">タップでも追加OK</span>
+        </div>
+        <div id="swipe-list" class="space-y-2.5"></div>
+      </div>
+
+    </section>
+
+    <!-- ========================================================================
+         画面2：カート・お届け設定画面
+    ========================================================================= -->
+    <section id="screen-cart" class="hidden flex-1 overflow-y-auto app-scroll px-4 pt-3 pb-32 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-base font-black text-slate-900">🛒 カート・お届け設定</h2>
+        <button type="button" onclick="switchScreen('home')" class="text-xs font-bold text-[#2563EB] bg-blue-50 px-3 py-1.5 rounded-xl">
+          ＋ 買い物を続ける
+        </button>
+      </div>
+
+      <!-- カート内商品リスト -->
+      <div id="cart-items-list" class="space-y-2.5"></div>
+
+      <!-- 1タップお届け日時・置き配・お支払い設定 -->
+      <div id="checkout-settings" class="space-y-4">
+        <div class="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-sm">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-black text-slate-800">📅 お届け日時指定（1タップ）</h3>
+            <span class="text-[10px] font-bold text-[#10B981]">配送料無料</span>
+          </div>
+          <div id="delivery-time-options" class="grid grid-cols-1 gap-2"></div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-sm">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-xs font-black text-slate-800">📦 置き配場所指定（1タップ）</h3>
+            <span class="text-[10px] font-bold text-slate-500">チャイム鳴らしません</span>
+          </div>
+          <div id="dropoff-options" class="grid grid-cols-2 gap-2"></div>
+        </div>
+
+        <div class="bg-white rounded-2xl p-3.5 border border-slate-200 shadow-sm">
+          <h3 class="text-xs font-black text-slate-800 mb-2">💳 お支払い方法（1タップ）</h3>
+          <div id="payment-options" class="grid grid-cols-3 gap-2"></div>
+        </div>
+
+        <div class="bg-slate-900 text-white rounded-2xl p-4 shadow-lg space-y-3">
+          <div class="flex items-center justify-between text-xs text-slate-300">
+            <span>商品合計（税込）</span>
+            <span id="summary-subtotal" class="font-bold">¥0</span>
+          </div>
+          <div class="flex items-center justify-between text-xs text-slate-300">
+            <span>配送料</span>
+            <span class="font-bold text-emerald-400">無料（¥0）</span>
+          </div>
+          <div class="border-t border-slate-700 pt-2.5 flex items-baseline justify-between">
+            <span class="text-sm font-black">お支払い合計</span>
+            <span id="summary-total" class="text-2xl font-black text-[#10B981]">¥0</span>
+          </div>
+
+          <button type="button"
+                  id="confirm-order-btn"
+                  onclick="confirmOrder()"
+                  class="w-full py-4 px-4 bg-[#10B981] hover:bg-[#059669] active:scale-[0.98] disabled:bg-slate-700 disabled:text-slate-400 text-white font-black text-base rounded-2xl shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center gap-2">
+            <span>注文を確定する</span>
+            <span id="confirm-btn-price" class="bg-white/20 px-2.5 py-0.5 rounded-lg text-sm">¥0</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         画面3：注文完了画面（注文確定と同時にカートは即座に 0・¥0 にリセット済）
+    ========================================================================= -->
+    <section id="screen-complete" class="hidden flex-1 overflow-y-auto app-scroll px-5 pt-6 pb-28 flex flex-col justify-between">
+      <div class="bg-white rounded-3xl p-6 border border-slate-200 shadow-md text-center space-y-4">
+        <div class="w-20 h-20 rounded-full bg-emerald-100 text-[#10B981] flex items-center justify-center text-4xl mx-auto animate-pop font-black">
+          ✓
+        </div>
+        <div>
+          <span class="inline-block bg-emerald-50 text-emerald-700 text-xs font-black px-3 py-1 rounded-full mb-2">
+            ご注文完了
+          </span>
+          <h2 class="text-xl font-black text-slate-900">
+            ご注文ありがとうございました！
+          </h2>
+          <p class="text-xs text-slate-500 mt-1">
+            片手操作でスムーズに注文を受け付けました。
+          </p>
+        </div>
+
+        <div class="bg-slate-50 rounded-2xl p-4 text-left space-y-2.5 border border-slate-200/80 text-xs">
+          <div class="flex justify-between items-center gap-2">
+            <span class="text-slate-500 font-bold shrink-0">お届け日時</span>
+            <span id="done-time" class="font-black text-slate-900 text-right">最短本日便（18:00〜20:00）</span>
+          </div>
+          <div class="flex justify-between items-center gap-2">
+            <span class="text-slate-500 font-bold shrink-0">置き配場所</span>
+            <span id="done-dropoff" class="font-black text-slate-900">ガスメーターボックス内</span>
+          </div>
+          <div class="flex justify-between items-center gap-2">
+            <span class="text-slate-500 font-bold shrink-0">お支払い</span>
+            <span id="done-payment" class="font-black text-slate-900">いつものカード</span>
+          </div>
+          <div class="border-t border-slate-200 pt-2.5 flex justify-between items-baseline">
+            <span class="text-slate-600 font-black">合計金額（税込）</span>
+            <span id="done-total" class="text-lg font-black text-[#10B981]">¥0</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="pt-4">
+        <button type="button"
+                onclick="resetAfterOrder()"
+                class="w-full py-4 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-black text-base rounded-2xl shadow-lg transition-all">
+          ホームに戻る
+        </button>
+      </div>
+    </section>
+
+    <!-- ========================================================================
+         下部固定ナビゲーション（親指ゾーン）
+    ========================================================================= -->
+    <nav aria-label="メインナビゲーション" class="absolute bottom-0 left-0 right-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 px-3 pt-2 pb-3 flex items-center justify-between gap-2 shadow-[0_-6px_24px_rgba(0,0,0,0.08)]">
+      <button type="button"
+              id="nav-home"
+              onclick="switchScreen('home')"
+              class="flex-1 py-2.5 px-2 rounded-2xl flex flex-col items-center justify-center gap-0.5 font-black text-xs transition-all bg-emerald-50 text-[#10B981]">
+        <span class="text-lg leading-none">🏠</span>
+        <span>ホーム</span>
+      </button>
+
+      <button type="button"
+              onclick="openVoiceSheet()"
+              class="-mt-6 w-20 h-20 rounded-full bg-gradient-to-b from-[#2563EB] to-blue-700 hover:from-blue-500 hover:to-blue-700 active:scale-95 text-white shadow-[0_8px_22px_rgba(37,99,235,0.48)] border-4 border-white flex flex-col items-center justify-center gap-0.5 transition-all shrink-0">
+        <span class="text-2xl leading-none">🎤</span>
+        <span class="text-[10px] font-black tracking-tight">声で頼む</span>
+      </button>
+
+      <button type="button"
+              id="nav-cart"
+              onclick="switchScreen('cart')"
+              class="flex-1 py-2.5 px-2 rounded-2xl flex flex-col items-center justify-center gap-0.5 font-black text-xs transition-all relative text-slate-600 hover:bg-slate-100">
+        <div class="relative">
+          <span class="text-lg leading-none">🛒</span>
+          <span id="cart-badge" class="hidden absolute -top-1.5 -right-3 bg-[#10B981] text-white text-[10px] font-black min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center shadow">
+            0
+          </span>
+        </div>
+        <span id="nav-cart-label">カート (¥0)</span>
+      </button>
+    </nav>
+
+    <!-- ========================================================================
+         ボトムシートA：「AIの先回り提案」シート
+    ========================================================================= -->
+    <div id="ai-proactive-backdrop"
+         onclick="closeAiProactiveSheet()"
+         class="hidden sheet-backdrop opacity-0 absolute inset-0 bg-slate-950/60 backdrop-blur-[1px] z-40"></div>
+
+    <div id="ai-proactive-panel"
+         role="dialog"
+         aria-label="AIの先回り提案"
+         class="sheet-panel translate-y-full absolute bottom-0 left-0 right-0 z-50 bg-white rounded-t-[32px] shadow-2xl border-t border-slate-200 flex flex-col max-h-[86%]">
+      <div class="pt-3 pb-1 px-5 flex items-center justify-between shrink-0">
+        <div class="w-8"></div>
+        <div class="w-12 h-1.5 rounded-full bg-slate-300"></div>
+        <button type="button" onclick="closeAiProactiveSheet()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-bold text-sm flex items-center justify-center">
+          ✕
+        </button>
+      </div>
+
+      <div class="px-5 pt-1 pb-3 border-b border-slate-100 shrink-0">
+        <div class="flex items-center justify-between gap-2 mb-1">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="bg-blue-100 text-blue-800 text-[11px] font-black px-2.5 py-0.5 rounded-full">🤖 AIの先回り提案</span>
+            <span id="proactive-sheet-profile-badge" class="bg-amber-100 text-amber-800 text-[11px] font-black px-2.5 py-0.5 rounded-full">0歳児育児中</span>
+          </div>
+          <button type="button"
+                  onclick="refreshProactiveWithGemini()"
+                  class="text-[10px] font-black bg-slate-100 hover:bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full transition-all shrink-0">
+            ✨ 再分析
+          </button>
+        </div>
+        <h3 class="text-base font-black text-slate-900 leading-snug">
+          そろそろ以下の定番品が切れる頃です。<br />カートに入れますか？
+        </h3>
+      </div>
+
+      <div id="ai-proactive-list" class="flex-1 overflow-y-auto app-scroll px-5 py-3 space-y-2.5 bg-slate-50"></div>
+
+      <div class="p-4 bg-white border-t border-slate-200 space-y-2 shrink-0">
+        <button type="button"
+                onclick="addAllAiProactiveItems()"
+                class="w-full py-4 px-4 bg-[#10B981] hover:bg-[#059669] active:scale-[0.98] text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 transition-all">
+          <span>まとめて全部カートに入れる（1タップ）</span>
+          <span id="ai-proactive-total" class="bg-white/20 px-2 py-0.5 rounded-lg text-xs">¥1,996</span>
+        </button>
+        <button type="button"
+                onclick="closeAiProactiveSheet()"
+                class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition-all">
+          今回は見送る
+        </button>
+      </div>
+    </div>
+
+    <!-- ========================================================================
+         ボトムシートB：「🎤 声でつぶやくAI補充」シート
+         ※「声で頼んだ商品（注文対象）」と「AIからのついで買い提案（任意・個別追加のみ）」を完全分離
+    ========================================================================= -->
+    <div id="voice-backdrop"
+         onclick="closeVoiceSheet()"
+         class="hidden sheet-backdrop opacity-0 absolute inset-0 bg-slate-950/60 backdrop-blur-[1px] z-40"></div>
+
+    <div id="voice-panel"
+         role="dialog"
+         aria-label="声でつぶやくAI補充"
+         class="sheet-panel translate-y-full absolute bottom-0 left-0 right-0 z-50 bg-white rounded-t-[32px] shadow-2xl border-t border-slate-200 flex flex-col max-h-[92%]">
+      <div class="pt-3 pb-1 px-5 flex items-center justify-between shrink-0">
+        <div class="w-8"></div>
+        <div class="w-12 h-1.5 rounded-full bg-slate-300"></div>
+        <button type="button" onclick="closeVoiceSheet()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-bold text-sm flex items-center justify-center">
+          ✕
+        </button>
+      </div>
+
+      <div class="px-5 pt-1 pb-3 border-b border-slate-100 shrink-0">
+        <div class="flex items-center justify-between">
+          <span class="bg-blue-100 text-blue-800 text-[11px] font-black px-2.5 py-0.5 rounded-full">🎤 声でつぶやくAI補充</span>
+          <span id="voice-engine-label" class="text-[10px] font-bold text-slate-400">内蔵AI解析モード</span>
+        </div>
+        <h3 class="text-base font-black text-slate-900 mt-1">
+          つぶやくだけでAIが商品を自動セレクト
+        </h3>
+      </div>
+
+      <div class="flex-1 overflow-y-auto app-scroll px-5 py-3.5 space-y-3.5 bg-slate-50">
+        <!-- マイクボタン＆自由テキスト入力 -->
+        <div class="bg-white rounded-2xl p-4 border border-slate-200 text-center space-y-2.5 shadow-sm">
+          <button type="button"
+                  id="mic-record-btn"
+                  onclick="toggleSpeechRecognition()"
+                  class="w-16 h-16 rounded-full bg-[#2563EB] hover:bg-blue-600 active:scale-95 text-white text-2xl mx-auto flex items-center justify-center shadow-lg transition-all">
+            🎤
+          </button>
+          <div>
+            <p id="mic-status-text" class="text-xs font-black text-slate-900">タップして話す</p>
+            <p class="text-[10px] text-slate-500 mt-0.5">例：「紙おむつを購入したい」「牛乳とたまごお願い」</p>
+          </div>
+
+          <!-- テキスト直接入力フォールバック -->
+          <div class="flex gap-1.5 pt-1">
+            <input type="text"
+                   id="voice-manual-input"
+                   placeholder="声を出せない時はここに入力..."
+                   onkeydown="if(event.key==='Enter') submitManualVoiceText()"
+                   class="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500" />
+            <button type="button"
+                    onclick="submitManualVoiceText()"
+                    class="px-3 py-2 bg-slate-900 text-white font-black text-xs rounded-xl shrink-0">
+              送信
+            </button>
+          </div>
+
+          <!-- 認識された発話テキスト -->
+          <div id="recognized-box" class="hidden bg-blue-50 border border-blue-200 rounded-xl p-2.5 text-left">
+            <div class="text-[10px] font-black text-blue-700 mb-0.5">🗣️ あなたのつぶやき：</div>
+            <p id="recognized-text" class="text-xs font-black text-slate-900"></p>
+          </div>
+        </div>
+
+        <!-- ワンタップで試せるテスト発話例文 -->
+        <div>
+          <p class="text-[11px] font-black text-slate-600 mb-1.5">💡 マイクなしでもワンタップでテスト発話：</p>
+          <div class="flex flex-col gap-1.5">
+            <button type="button"
+                    onclick="runVoicePrompt('紙おむつを購入したい')"
+                    class="text-left text-xs font-bold bg-white hover:bg-blue-50 active:scale-[0.99] text-slate-800 border border-slate-200 px-3 py-2.5 rounded-xl transition-all flex items-center justify-between">
+              <span>「紙おむつを購入したい」</span>
+              <span class="text-[#2563EB] font-black">試す ▶</span>
+            </button>
+            <button type="button"
+                    onclick="runVoicePrompt('牛乳とたまごお願い')"
+                    class="text-left text-xs font-bold bg-white hover:bg-blue-50 active:scale-[0.99] text-slate-800 border border-slate-200 px-3 py-2.5 rounded-xl transition-all flex items-center justify-between">
+              <span>「牛乳とたまごお願い」</span>
+              <span class="text-[#2563EB] font-black">試す ▶</span>
+            </button>
+            <button type="button"
+                    onclick="runVoicePrompt('ペットシーツとフード')"
+                    class="text-left text-xs font-bold bg-white hover:bg-blue-50 active:scale-[0.99] text-slate-800 border border-slate-200 px-3 py-2.5 rounded-xl transition-all flex items-center justify-between">
+              <span>「ペットシーツとフード」</span>
+              <span class="text-[#2563EB] font-black">試す ▶</span>
+            </button>
+            <button type="button"
+                    onclick="runVoicePrompt('トイレットペーパーと洗剤')"
+                    class="text-left text-xs font-bold bg-white hover:bg-blue-50 active:scale-[0.99] text-slate-800 border border-slate-200 px-3 py-2.5 rounded-xl transition-all flex items-center justify-between">
+              <span>「トイレットペーパーと洗剤」</span>
+              <span class="text-[#2563EB] font-black">試す ▶</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 解析結果エリア（2つの明確に分離されたセクション） -->
+        <div id="voice-result-area" class="hidden space-y-4">
+          <!-- セクション1：声で頼んだ商品（注文対象：緑枠・メインボタンでカートに入るのはここだけ） -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black text-emerald-800 flex items-center gap-1">
+                <span>🎤 声で頼んだ商品</span>
+                <span class="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full">注文対象</span>
+              </span>
+              <span id="voice-ai-reason" class="text-[10px] font-bold text-slate-500"></span>
+            </div>
+            <div id="voice-requested-cards" class="space-y-2"></div>
+          </div>
+
+          <!-- セクション2：AIからのついで買い提案（任意・個別追加のみ：点線枠・メイン一括ボタンには含まない） -->
+          <div id="voice-optional-section" class="hidden space-y-2 pt-2.5 border-t-2 border-dashed border-slate-300">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-black text-slate-700 flex items-center gap-1">
+                <span>🤖 AIからのついで買い提案</span>
+              </span>
+              <span class="text-[10px] font-bold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-full">任意・個別追加のみ</span>
+            </div>
+            <div id="voice-optional-cards" class="space-y-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 下部メイン確定ボタン：声で頼んだ商品「だけ」をカートに入れる -->
+      <div id="voice-footer" class="hidden p-4 bg-white border-t border-slate-200 shrink-0">
+        <button type="button"
+                id="voice-confirm-btn"
+                onclick="addVoiceRequestedItemsOnly()"
+                class="w-full py-4 px-4 bg-[#10B981] hover:bg-[#059669] active:scale-[0.98] text-white font-black text-sm rounded-2xl shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2 transition-all">
+          <span id="voice-confirm-btn-text">声で頼んだ商品をカートに入れる</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ========================================================================
+         モーダルC：⚠️ うっかり重複買い防止ガード
+    ========================================================================= -->
+    <div id="dup-backdrop"
+         onclick="closeDuplicateModal()"
+         class="hidden sheet-backdrop opacity-0 absolute inset-0 bg-slate-950/65 backdrop-blur-[1px] z-50"></div>
+
+    <div id="dup-panel"
+         role="dialog"
+         aria-label="AI重複買い防止ガード"
+         class="sheet-panel translate-y-full absolute bottom-0 left-0 right-0 z-50 bg-white rounded-t-[32px] shadow-2xl border-t-4 border-amber-400 p-5 space-y-4">
+      <div class="flex items-start gap-3">
+        <div class="w-12 h-12 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center text-2xl shrink-0">
+          ⚠️
+        </div>
+        <div>
+          <span class="inline-block bg-amber-100 text-amber-900 text-[10px] font-black px-2.5 py-0.5 rounded-full mb-1">
+            うっかり重複買い防止ガード
+          </span>
+          <h3 class="text-base font-black text-slate-900 leading-snug">
+            昨日購入済みですが追加しますか？
+          </h3>
+          <p id="dup-item-desc" class="text-xs text-slate-600 mt-1 font-bold">
+            対象：特選 濃厚牛乳（¥238）
+          </p>
+        </div>
+      </div>
+
+      <div class="space-y-2 pt-1">
+        <button type="button"
+                onclick="closeDuplicateModal()"
+                class="w-full py-4 bg-slate-900 hover:bg-slate-800 active:scale-[0.98] text-white font-black text-sm rounded-2xl shadow transition-all">
+          やめる（重複防止）
+        </button>
+        <button type="button"
+                onclick="forceAddDuplicateItem()"
+                class="w-full py-3 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-black text-xs rounded-xl transition-all">
+          それでも追加
+        </button>
+      </div>
+    </div>
+
+    <!-- ========================================================================
+         モーダルD：⚙️ AI設定＆家族構成・ペット頭数微調整パネル
+    ========================================================================= -->
+    <div id="ai-settings-backdrop"
+         onclick="closeAiSettingsSheet()"
+         class="hidden sheet-backdrop opacity-0 absolute inset-0 bg-slate-950/65 backdrop-blur-[1px] z-50"></div>
+
+    <div id="ai-settings-panel"
+         role="dialog"
+         aria-label="AI設定と家族構成"
+         class="sheet-panel translate-y-full absolute bottom-0 left-0 right-0 z-50 bg-slate-900 text-white rounded-t-[32px] p-5 space-y-4 max-h-[90%] overflow-y-auto app-scroll border-t border-slate-700">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-black flex items-center gap-2">
+          <span>🤖</span>
+          <span>AI＆通知シミュレーター</span>
+        </h3>
+        <button type="button" onclick="closeAiSettingsSheet()" class="w-8 h-8 rounded-full bg-slate-800 text-slate-300 font-bold text-sm flex items-center justify-center">
+          ✕
+        </button>
+      </div>
+
+      <!-- 1. Gemini APIキー入力 -->
+      <div class="space-y-1.5">
+        <label class="block text-xs font-bold text-slate-300">Gemini APIキー（任意・入力すると本物のGemini 2.5 Flashが推論）</label>
+        <div class="flex gap-2">
+          <input type="password"
+                 id="modal-api-key-input"
+                 placeholder="AIzaSy..."
+                 class="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500" />
+          <button type="button"
+                  onclick="saveApiKeyFromInput('modal-api-key-input')"
+                  class="px-4 py-2.5 bg-[#2563EB] hover:bg-blue-500 active:scale-95 text-white font-black text-xs rounded-xl">
+            保存
+          </button>
+        </div>
+      </div>
+
+      <!-- 2. ワンタップ・ライフスタイルプリセット -->
+      <div class="space-y-2 pt-2 border-t border-slate-800">
+        <div class="flex items-center justify-between">
+          <label class="text-xs font-black text-emerald-400">👤 AIの家族構成・モード設定</label>
+          <span class="text-[10px] text-slate-400">1タップで全体を切替</span>
+        </div>
+        <div id="family-preset-list" class="space-y-2"></div>
+      </div>
+
+      <!-- 3. 世帯人数・赤ちゃん月齢・ペット頭数の微調整セレクター -->
+      <div class="space-y-3 pt-2 border-t border-slate-800 bg-slate-800/50 p-3.5 rounded-2xl border border-slate-700/80">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-black text-amber-300">🎛️ 世帯人数・月齢・ペット頭数の微調整</span>
+          <span class="text-[10px] text-slate-400">セット量に自動反映</span>
+        </div>
+
+        <!-- 世帯人数 -->
+        <div class="space-y-1">
+          <span class="block text-[11px] font-bold text-slate-300">👨‍👩‍👧‍👦 世帯人数（食品・日用品の量に反映）</span>
+          <div id="tune-household-btns" class="grid grid-cols-2 gap-1.5"></div>
+        </div>
+
+        <!-- 赤ちゃん月齢 -->
+        <div class="space-y-1">
+          <span class="block text-[11px] font-bold text-slate-300">👶 赤ちゃんの月齢（おむつ・離乳食に反映）</span>
+          <div id="tune-baby-btns" class="grid grid-cols-3 gap-1.5"></div>
+        </div>
+
+        <!-- ペット頭数 -->
+        <div class="space-y-1">
+          <span class="block text-[11px] font-bold text-slate-300">🐾 ペットの頭数（フード・シーツの量に反映）</span>
+          <div id="tune-pet-btns" class="grid grid-cols-3 gap-1.5"></div>
+        </div>
+      </div>
+
+      <!-- 4. 通知＆提案テストボタン -->
+      <div class="space-y-2 pt-2 border-t border-slate-800">
+        <button type="button"
+                onclick="closeAiSettingsSheet(); triggerDeadlineNotification();"
+                class="w-full p-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] text-slate-950 font-black text-xs text-left flex items-center justify-between transition-all">
+          <span>⏰ 注文締め切り15分前通知を送る</span>
+          <span>▶</span>
+        </button>
+        <button type="button"
+                onclick="closeAiSettingsSheet(); openAiProactiveSheet();"
+                class="w-full p-3.5 rounded-2xl bg-[#10B981] hover:bg-[#059669] active:scale-[0.98] text-white font-black text-xs text-left flex items-center justify-between transition-all">
+          <span>🤖 AI先回り提案シートを開く</span>
+          <span>▶</span>
+        </button>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // =========================================================================
+    // 1. 家族構成プリセット＆微調整パラメータ
+    // =========================================================================
+    const FAMILY_PROFILES = {
+      baby: {
+        id: 'baby',
+        emoji: '👶',
+        title: '0歳児育児中（おむつ・ミルク重視）',
+        shortTag: '0歳児育児中',
+        desc: '生後8ヶ月・片手抱っこ中。おむつLサイズや牛乳・たまごの消費サイクルを優先予測します。',
+        defaultHousehold: 'family',
+        defaultBaby: '7m_1y',
+        defaultPet: 'none',
+        bannerSummary: '牛乳・赤たまご・紙おむつが切れそうです',
+        pushDesc: 'そろそろ牛乳・赤たまご・紙おむつが切れる頃です。タップして確認 ›',
+        proactiveItems: [
+          {
+            id: 'f_milk',
+            name: '特選 濃厚牛乳',
+            price: 238,
+            emoji: '🥛',
+            reason: '前回購入から4日経過（通常消費周期：4日）'
+          },
+          {
+            id: 'f_egg',
+            name: '新鮮 赤たまご',
+            price: 278,
+            emoji: '🥚',
+            reason: '前回購入から6日経過（定番補充タイミング）'
+          },
+          {
+            id: 'b_diaper',
+            name: 'ふわふわ紙おむつ L',
+            price: 1480,
+            emoji: '🧷',
+            reason: '残り枚数予測：あと約6枚（本日夕方の補充推奨）'
+          }
+        ]
+      },
+      pet: {
+        id: 'pet',
+        emoji: '🐶',
+        title: 'ペットと暮らす飼い主（ペットシーツ重視）',
+        shortTag: 'ペットと暮らす飼い主',
+        desc: '犬・猫と暮らす家庭。頭数に合わせてペットシーツや猫砂の補充量をAIが自動最適化します。',
+        defaultHousehold: 'small',
+        defaultBaby: 'none',
+        defaultPet: 'multi',
+        bannerSummary: 'ペットシーツ・フード・猫砂の残量がわずかです',
+        pushDesc: 'ペットシーツとフードの補充タイミングが近づいています。タップして確認 ›',
+        proactiveItems: [
+          {
+            id: 'p_sheet',
+            name: '超吸収ペットシーツ',
+            price: 1180,
+            emoji: '🟦',
+            reason: '前回購入から12日経過（多頭・毎日交換ペース）'
+          },
+          {
+            id: 'p_dog',
+            name: 'プレミアムドッグフード',
+            price: 2200,
+            emoji: '🐕',
+            reason: '残り約3日分予測（定期補充タイミング）'
+          },
+          {
+            id: 'p_churu',
+            name: '国産ちゅ〜る',
+            price: 248,
+            emoji: '🐟',
+            reason: 'おやつストックの定番補充サイクル'
+          }
+        ]
+      },
+      dual: {
+        id: 'dual',
+        emoji: '🍱',
+        title: '共働き・時短料理（朝食・簡単おかず重視）',
+        shortTag: '共働き・時短料理',
+        desc: '平日は忙しく時短料理が中心。毎朝のパン・牛乳・納豆や夕飯の時短食材を優先予測します。',
+        defaultHousehold: 'family',
+        defaultBaby: 'none',
+        defaultPet: 'none',
+        bannerSummary: '明日の朝食パン・牛乳・納豆が切れそうです',
+        pushDesc: '明日の朝食セット（食パン・牛乳・納豆）が切れる頃です。タップして確認 ›',
+        proactiveItems: [
+          {
+            id: 'f_bread',
+            name: 'ふんわり食パン',
+            price: 168,
+            emoji: '🍞',
+            reason: '前回購入から3日経過（明日の朝食分が不足予測）'
+          },
+          {
+            id: 'f_milk',
+            name: '特選 濃厚牛乳',
+            price: 238,
+            emoji: '🥛',
+            reason: '前回購入から4日経過（通常消費周期：4日）'
+          },
+          {
+            id: 'f_natto',
+            name: '極小粒 納豆',
+            price: 118,
+            emoji: '🫘',
+            reason: '前回購入から5日経過（定番ストック補充）'
+          }
+        ]
+      }
+    };
+
+    const HOUSEHOLD_OPTIONS = [
+      { id: 'small', label: '1〜2人' },
+      { id: 'family', label: '3〜4人ファミリー' }
+    ];
+
+    const BABY_AGE_OPTIONS = [
+      { id: 'none', label: 'なし' },
+      { id: '0_6m', label: '0歳前半' },
+      { id: '7m_1y', label: '0歳後半〜1歳' }
+    ];
+
+    const PET_COUNT_OPTIONS = [
+      { id: 'none', label: 'なし' },
+      { id: 'one', label: '1匹' },
+      { id: 'multi', label: '多頭飼い(2匹〜)' }
+    ];
+
+    // =========================================================================
+    // 2. 4カテゴリ・全12種類の一括セット（世帯・月齢・頭数に応じた増量・最適化バリエーション付）
+    // =========================================================================
+    const CATALOG = {
+      food: {
+        id: 'food',
+        label: '食品',
+        emoji: '🍳',
+        bundles: [
+          {
+            badge: '10分時短レシピ・一括追加',
+            base: {
+              title: '10分で完成！豚肉とキャベツの旨塩炒めセット',
+              subtitle: '国産豚こま肉＋カットキャベツ＋特製旨塩ダレ（材料3点セット）',
+              price: 890,
+              items: [
+                { id: 'rec_pork', name: '国産豚こま切れ肉 300g', price: 498, emoji: '🥩', qty: 1 },
+                { id: 'rec_cabbage', name: '時短カットキャベツ 大袋', price: 198, emoji: '🥬', qty: 1 },
+                { id: 'rec_sauce', name: '特製ねぎ旨塩炒めダレ', price: 194, emoji: '🧂', qty: 1 }
+              ]
+            },
+            family: {
+              title: '【ファミリー増量】豚肉とキャベツの旨塩炒め（3〜4人前）',
+              subtitle: '国産豚こま600g(×2)＋カットキャベツ大袋(×2)＋特製旨塩ダレ',
+              price: 1586,
+              aiTag: '👨‍👩‍👧‍👦 ファミリー増量中',
+              items: [
+                { id: 'rec_pork', name: '国産豚こま切れ肉 300g', price: 498, emoji: '🥩', qty: 2 },
+                { id: 'rec_cabbage', name: '時短カットキャベツ 大袋', price: 198, emoji: '🥬', qty: 2 },
+                { id: 'rec_sauce', name: '特製ねぎ旨塩炒めダレ', price: 194, emoji: '🧂', qty: 1 }
+              ]
+            }
+          },
+          {
+            badge: '忙しい朝に・一括追加',
+            base: {
+              title: '定番パン＆牛乳・たまご朝食セット',
+              subtitle: 'ふんわり食パン6枚切＋特選濃厚牛乳＋新鮮赤たまご10個',
+              price: 684,
+              items: [
+                { id: 'f_bread', name: 'ふんわり食パン', price: 168, emoji: '🍞', qty: 1 },
+                { id: 'f_milk', name: '特選 濃厚牛乳', price: 238, emoji: '🥛', qty: 1 },
+                { id: 'f_egg', name: '新鮮 赤たまご', price: 278, emoji: '🥚', qty: 1 }
+              ]
+            },
+            family: {
+              title: '【ファミリー増量】朝食パン2斤＆牛乳2本・たまごセット',
+              subtitle: 'ふんわり食パン(×2)＋特選濃厚牛乳(×2)＋新鮮赤たまご10個',
+              price: 1090,
+              aiTag: '👨‍👩‍👧‍👦 ファミリー増量中',
+              items: [
+                { id: 'f_bread', name: 'ふんわり食パン', price: 168, emoji: '🍞', qty: 2 },
+                { id: 'f_milk', name: '特選 濃厚牛乳', price: 238, emoji: '🥛', qty: 2 },
+                { id: 'f_egg', name: '新鮮 赤たまご', price: 278, emoji: '🥚', qty: 1 }
+              ]
+            }
+          },
+          {
+            badge: '子どもも喜ぶ・一括追加',
+            base: {
+              title: '電子レンジで5分！和風おろしハンバーグ簡単セット',
+              subtitle: 'ふっくらデミ＆おろしハンバーグ＋温野菜ミックス＋無洗米2kg',
+              price: 1480,
+              items: [
+                { id: 'rec_hamburg', name: 'ふっくら和風ハンバーグ 3個入', price: 598, emoji: '🍖', qty: 1 },
+                { id: 'rec_veg', name: 'そのまま使える彩り温野菜', price: 248, emoji: '🥦', qty: 1 },
+                { id: 'rec_rice2', name: '国産無洗米 2kg', price: 634, emoji: '🌾', qty: 1 }
+              ]
+            }
+          }
+        ],
+        staples: [
+          { id: 'f_milk', name: '特選 濃厚牛乳', spec: '1000ml', price: 238, emoji: '🥛', boughtYesterday: true },
+          { id: 'f_egg', name: '新鮮 赤たまご', spec: '10個入', price: 278, emoji: '🥚' },
+          { id: 'f_rice', name: '無洗米 5kg', spec: 'コシヒカリ', price: 2380, emoji: '🌾' },
+          { id: 'f_bread', name: 'ふんわり食パン', spec: '6枚切', price: 168, emoji: '🍞' },
+          { id: 'f_natto', name: '極小粒 納豆', spec: '3パック', price: 118, emoji: '🫘' },
+          { id: 'f_banana', name: '完熟バナナ', spec: '1房', price: 198, emoji: '🍌' }
+        ],
+        swipeItems: [
+          { id: 'sw_cabbage', name: 'シャキシャキ高原キャベツ', spec: '1玉', price: 198, emoji: '🥬' },
+          { id: 'sw_yogurt', name: 'なめらかプレーンヨーグルト', spec: '400g', price: 158, emoji: '🥣' }
+        ]
+      },
+      baby: {
+        id: 'baby',
+        label: '赤ちゃん',
+        emoji: '👶',
+        bundles: [
+          {
+            badge: '子育て応援一括',
+            base: {
+              title: 'おむつ＆おしりふきまとめ買いセット',
+              subtitle: 'ふわふわ紙おむつLサイズ＋厚手おしりふき大容量パック',
+              price: 1878,
+              items: [
+                { id: 'b_diaper', name: 'ふわふわ紙おむつ L', price: 1480, emoji: '🧷', qty: 1 },
+                { id: 'b_wipes', name: '厚手おしりふき', price: 398, emoji: '🧻', qty: 1 }
+              ]
+            },
+            baby_0_6m: {
+              title: '【0歳前半向け】Sサイズおむつ＆おしりふき安心セット',
+              subtitle: 'やさしい紙おむつSサイズ＋厚手おしりふき大容量パック',
+              price: 1878,
+              aiTag: '👶 0歳前半に最適化',
+              items: [
+                { id: 'b_diaper_s', name: 'やさしい紙おむつ Sサイズ', price: 1480, emoji: '🧷', qty: 1 },
+                { id: 'b_wipes', name: '厚手おしりふき', price: 398, emoji: '🧻', qty: 1 }
+              ]
+            }
+          },
+          {
+            badge: '寝かしつけ・外出安心',
+            base: {
+              title: 'ほほえみ粉ミルク＆赤ちゃん用麦茶セット',
+              subtitle: 'ほほえみ粉ミルク800g＋赤ちゃん用麦茶500ml×3本',
+              price: 3010,
+              items: [
+                { id: 'b_milk', name: 'ほほえみ粉ミルク', price: 2680, emoji: '🍼', qty: 1 },
+                { id: 'sw_tea', name: '赤ちゃん用麦茶ペットボトル', price: 330, emoji: '🍵', qty: 1 }
+              ]
+            }
+          },
+          {
+            badge: 'モグモグ期応援',
+            base: {
+              title: '離乳食ベビーフード3食＆お野菜せんべいセット',
+              subtitle: 'ベビーフード3食(9ヶ月〜)＋お野菜せんべい1箱',
+              price: 660,
+              items: [
+                { id: 'b_food', name: 'ベビーフード3食', price: 450, emoji: '🥣', qty: 1 },
+                { id: 'sw_snack', name: 'お野菜せんべい（7ヶ月〜）', price: 210, emoji: '🍘', qty: 1 }
+              ]
+            }
+          }
+        ],
+        staples: [
+          { id: 'b_diaper', name: 'ふわふわ紙おむつ L', spec: '44枚入', price: 1480, emoji: '🧷', boughtYesterday: true },
+          { id: 'b_milk', name: 'ほほえみ粉ミルク', spec: '800g', price: 2680, emoji: '🍼' },
+          { id: 'b_food', name: 'ベビーフード3食', spec: '9ヶ月〜', price: 450, emoji: '🥣' },
+          { id: 'b_wipes', name: '厚手おしりふき', spec: '80枚×3個', price: 398, emoji: '🧻' }
+        ],
+        swipeItems: [
+          { id: 'sw_tea', name: '赤ちゃん用麦茶ペットボトル', spec: '500ml×3本', price: 330, emoji: '🍵' },
+          { id: 'sw_snack', name: 'お野菜せんべい（7ヶ月〜）', spec: '1箱', price: 210, emoji: '🍘' }
+        ]
+      },
+      pet: {
+        id: 'pet',
+        label: 'ペット',
+        emoji: '🐶',
+        bundles: [
+          {
+            badge: 'ペット定番一括',
+            base: {
+              title: 'ペットケア定番セット',
+              subtitle: 'プレミアムドッグフード＋超吸収ペットシーツ ワイド',
+              price: 3380,
+              items: [
+                { id: 'p_dog', name: 'プレミアムドッグフード', price: 2200, emoji: '🐕', qty: 1 },
+                { id: 'p_sheet', name: '超吸収ペットシーツ', price: 1180, emoji: '🟦', qty: 1 }
+              ]
+            },
+            multiPet: {
+              title: '【多頭飼い2倍量】ペットケア大容量まとめ買いセット',
+              subtitle: 'プレミアムドッグフード(×2袋)＋超吸収ペットシーツ(×2パック)',
+              price: 6760,
+              aiTag: '🐾 多頭飼い2倍量',
+              items: [
+                { id: 'p_dog', name: 'プレミアムドッグフード', price: 2200, emoji: '🐕', qty: 2 },
+                { id: 'p_sheet', name: '超吸収ペットシーツ', price: 1180, emoji: '🟦', qty: 2 }
+              ]
+            }
+          },
+          {
+            badge: '猫ちゃん快適一括',
+            base: {
+              title: '固まる猫砂7L＆国産ちゅ〜るご褒美セット',
+              subtitle: '強力消臭固まる猫砂7L＋国産ちゅ〜る4本入',
+              price: 1028,
+              items: [
+                { id: 'p_sand', name: '固まる猫砂 7L', price: 780, emoji: '🐈', qty: 1 },
+                { id: 'p_churu', name: '国産ちゅ〜る', price: 248, emoji: '🐟', qty: 1 }
+              ]
+            },
+            multiPet: {
+              title: '【多頭飼い2倍量】固まる猫砂2袋＆ちゅ〜る2パックセット',
+              subtitle: '強力消臭固まる猫砂7L(×2袋)＋国産ちゅ〜る4本入(×2)',
+              price: 2056,
+              aiTag: '🐾 多頭飼い2倍量',
+              items: [
+                { id: 'p_sand', name: '固まる猫砂 7L', price: 780, emoji: '🐈', qty: 2 },
+                { id: 'p_churu', name: '国産ちゅ〜る', price: 248, emoji: '🐟', qty: 2 }
+              ]
+            }
+          },
+          {
+            badge: 'お散歩・衛生ケア',
+            base: {
+              title: 'ペット用ウエットティッシュ＆デンタルガムセット',
+              subtitle: 'ペット用ウエット70枚×2個＋デンタルケアガム10本入',
+              price: 878,
+              items: [
+                { id: 'sw_petwipe', name: 'ペット用ウエットティッシュ', price: 398, emoji: '🧴', qty: 1 },
+                { id: 'sw_gum', name: 'デンタルケアガム', price: 480, emoji: '🦴', qty: 1 }
+              ]
+            }
+          }
+        ],
+        staples: [
+          { id: 'p_dog', name: 'プレミアムドッグフード', spec: '2kg', price: 2200, emoji: '🐕' },
+          { id: 'p_sand', name: '固まる猫砂 7L', spec: '強力消臭', price: 780, emoji: '🐈' },
+          { id: 'p_sheet', name: '超吸収ペットシーツ', spec: 'ワイド50枚', price: 1180, emoji: '🟦' },
+          { id: 'p_churu', name: '国産ちゅ〜る', spec: '4本入', price: 248, emoji: '🐟' }
+        ],
+        swipeItems: [
+          { id: 'sw_petwipe', name: 'ペット用ウエットティッシュ', spec: '70枚×2個', price: 398, emoji: '🧴' },
+          { id: 'sw_gum', name: 'デンタルケアガム', spec: '10本入', price: 480, emoji: '🦴' }
+        ]
+      },
+      daily: {
+        id: 'daily',
+        label: '日用品',
+        emoji: '🧻',
+        bundles: [
+          {
+            badge: '日用品まるごと',
+            base: {
+              title: '日用品ストックセット',
+              subtitle: 'ボックスティッシュ5箱＋トイレットペーパー12R＋お掃除シート',
+              price: 1280,
+              items: [
+                { id: 'd_tissue', name: 'ボックスティッシュ 5箱', price: 398, emoji: '📦', qty: 1 },
+                { id: 'd_tp', name: 'トイレットペーパー 12R', price: 548, emoji: '🧻', qty: 1 },
+                { id: 'd_wipe', name: '除菌お掃除シート', price: 334, emoji: '✨', qty: 1 }
+              ]
+            },
+            family: {
+              title: '【ファミリー大容量】ティッシュ2組＆トイレットペーパー2組セット',
+              subtitle: 'ボックスティッシュ5箱(×2)＋トイレットペーパー12R(×2)＋お掃除シート',
+              price: 2226,
+              aiTag: '👨‍👩‍👧‍👦 ファミリー増量中',
+              items: [
+                { id: 'd_tissue', name: 'ボックスティッシュ 5箱', price: 398, emoji: '📦', qty: 2 },
+                { id: 'd_tp', name: 'トイレットペーパー 12R', price: 548, emoji: '🧻', qty: 2 },
+                { id: 'd_wipe', name: '除菌お掃除シート', price: 334, emoji: '✨', qty: 1 }
+              ]
+            }
+          },
+          {
+            badge: '洗濯・キッチン補充',
+            base: {
+              title: '洗濯洗剤＆食器用洗剤・ゴミ袋まとめ補充セット',
+              subtitle: '濃縮洗濯洗剤特大詰替＋食器用洗剤除菌プラス＋半透明ゴミ袋45L',
+              price: 944,
+              items: [
+                { id: 'd_detergent', name: '濃縮洗濯洗剤', price: 498, emoji: '🫧', qty: 1 },
+                { id: 'd_dish', name: '食器用洗剤', price: 198, emoji: '🍽️', qty: 1 },
+                { id: 'sw_bag', name: '半透明ゴミ袋 45L', price: 248, emoji: '🛍️', qty: 1 }
+              ]
+            }
+          },
+          {
+            badge: 'キッチン消耗品一括',
+            base: {
+              title: '厚手キッチンペーパー＆除菌お掃除シートセット',
+              subtitle: '厚手キッチンペーパー4ロール＋除菌お掃除シート＋食器用洗剤',
+              price: 830,
+              items: [
+                { id: 'sw_kitchen', name: '厚手キッチンペーパー', price: 298, emoji: '🧻', qty: 1 },
+                { id: 'd_wipe', name: '除菌お掃除シート', price: 334, emoji: '✨', qty: 1 },
+                { id: 'd_dish', name: '食器用洗剤', price: 198, emoji: '🍽️', qty: 1 }
+              ]
+            }
+          }
+        ],
+        staples: [
+          { id: 'd_detergent', name: '濃縮洗濯洗剤', spec: '特大詰替', price: 498, emoji: '🫧', boughtYesterday: true },
+          { id: 'd_tissue', name: 'ボックスティッシュ 5箱', spec: '保湿タイプ', price: 398, emoji: '📦' },
+          { id: 'd_tp', name: 'トイレットペーパー 12R', spec: 'ダブル', price: 548, emoji: '🧻' },
+          { id: 'd_dish', name: '食器用洗剤', spec: '除菌プラス', price: 198, emoji: '🍽️' }
+        ],
+        swipeItems: [
+          { id: 'sw_kitchen', name: '厚手キッチンペーパー', spec: '4ロール', price: 298, emoji: '🧻' },
+          { id: 'sw_bag', name: '半透明ゴミ袋 45L', spec: '30枚入', price: 248, emoji: '🛍️' }
+        ]
+      }
+    };
+
+    // =========================================================================
+    // 3. お届け・置き配・お支払い選択肢（置き配は「ガスメーターボックス内」統一）
+    // =========================================================================
+    const DELIVERY_TIMES = [
+      { id: 't1', label: '最短本日便（18:00〜20:00）', sub: 'あと15分以内の注文で本日お届け' },
+      { id: 't2', label: '本日夜間便（20:00〜22:00）', sub: '寝かしつけ後の受け取りに便利' },
+      { id: 't3', label: '明日午前便（09:00〜12:00）', sub: '朝イチでまとめて受け取り' }
+    ];
+
+    const DROPOFF_PLACES = [
+      { id: 'd1', label: '玄関ドア前', emoji: '🚪' },
+      { id: 'd2', label: '宅配ボックス', emoji: '🔐' },
+      { id: 'd3', label: 'ガスメーターボックス内', emoji: '🧰' },
+      { id: 'd4', label: 'チャイム鳴らして手渡し', emoji: '🔔' }
+    ];
+
+    const PAYMENT_METHODS = [
+      { id: 'p1', label: 'いつものカード', emoji: '💳' },
+      { id: 'p2', label: 'PayPay', emoji: '📱' },
+      { id: 'p3', label: 'Apple Pay', emoji: '🍎' }
+    ];
+
+    // =========================================================================
+    // 4. アプリ状態（初期カートは空 0点・¥0）
+    // =========================================================================
+    let activeFamilyProfile = 'baby';
+    let householdSize = 'family';   // 'small' | 'family'
+    let babyAgeStage = '7m_1y';     // 'none' | '0_6m' | '7m_1y'
+    let petCountMode = 'none';      // 'none' | 'one' | 'multi'
+
+    let activeCategory = 'food';
+    let bundleIndexByCategory = {
+      food: 0,
+      baby: 0,
+      pet: 0,
+      daily: 0
+    };
+
+    let proactiveItems = [...FAMILY_PROFILES.baby.proactiveItems];
+    let cart = [];
+    let selectedTime = DELIVERY_TIMES[0].label;
+    let selectedDropoff = DROPOFF_PLACES[2].label; // 「ガスメーターボックス内」
+    let selectedPayment = PAYMENT_METHODS[0].label;
+
+    let geminiApiKey = '';
+    let pendingDuplicateItem = null;
+    let currentVoiceRequested = [];
+    let currentVoiceOptional = [];
+    let isListening = false;
+    let recognition = null;
+    let toastTimer = null;
+    let pushTimer = null;
+
+    // =========================================================================
+    // 5. 初期化
+    // =========================================================================
+    document.addEventListener('DOMContentLoaded', () => {
+      applyFamilyProfile('baby', false);
+      renderCategoryTabs();
+      renderCategoryContent();
+      renderAiProactiveList();
+      renderCheckoutOptions();
+      updateCartUI();
+      initSpeechRecognition();
+
+      setTimeout(() => {
+        triggerDeadlineNotification();
+      }, 1500);
+    });
+
+    // =========================================================================
+    // 6. 家族構成プリセット＆微調整パラメータ連動ロジック
+    // =========================================================================
+    function applyFamilyProfile(profileId, showNotification = true) {
+      const prof = FAMILY_PROFILES[profileId];
+      if (!prof) return;
+
+      activeFamilyProfile = profileId;
+      householdSize = prof.defaultHousehold;
+      babyAgeStage = prof.defaultBaby;
+      petCountMode = prof.defaultPet;
+
+      proactiveItems = prof.proactiveItems.map(item => ({ ...item }));
+
+      updateProfileSummaryUI();
+      renderFamilyPresetList();
+      renderFineTuneButtons();
+      renderCategoryContent();
+      renderAiProactiveList();
+
+      if (showNotification) {
+        showToast(`${prof.emoji}「${prof.shortTag}」のAI予測に切り替えました！`);
+      }
+    }
+
+    function updateProfileSummaryUI() {
+      const prof = FAMILY_PROFILES[activeFamilyProfile];
+      const extraTags = [];
+      if (householdSize === 'family') extraTags.push('3〜4人');
+      if (babyAgeStage === '0_6m') extraTags.push('0歳前半');
+      if (babyAgeStage === '7m_1y') extraTags.push('0歳後半〜1歳');
+      if (petCountMode === 'one') extraTags.push('ペット1匹');
+      if (petCountMode === 'multi') extraTags.push('多頭飼い');
+
+      const fullChipText = extraTags.length > 0 ? `${prof.shortTag}・${extraTags.join('/')}` : prof.shortTag;
+
+      document.getElementById('home-profile-chip').textContent = fullChipText;
+      document.getElementById('home-proactive-summary').textContent = prof.bannerSummary;
+      document.getElementById('push-banner-desc').textContent = prof.pushDesc;
+      document.getElementById('proactive-sheet-profile-badge').textContent = fullChipText;
+    }
+
+    function setHouseholdSize(val) {
+      householdSize = val;
+      updateProfileSummaryUI();
+      renderFineTuneButtons();
+      renderCategoryContent();
+      showToast(`👨‍👩‍👧‍👦 世帯人数を「${val === 'family' ? '3〜4人ファミリー' : '1〜2人'}」に調整しました`);
+    }
+
+    function setBabyAgeStage(val) {
+      babyAgeStage = val;
+      if (val === '0_6m') {
+        proactiveItems = proactiveItems.map(it =>
+          it.id === 'b_diaper'
+            ? { id: 'b_diaper_s', name: 'やさしい紙おむつ Sサイズ', price: 1480, emoji: '🧷', reason: '0歳前半ペース：残り約8枚（本日補充推奨）' }
+            : it
+        );
+      } else if (val === '7m_1y') {
+        proactiveItems = proactiveItems.map(it =>
+          it.id === 'b_diaper_s'
+            ? { id: 'b_diaper', name: 'ふわふわ紙おむつ L', price: 1480, emoji: '🧷', reason: '残り枚数予測：あと約6枚（本日夕方の補充推奨）' }
+            : it
+        );
+      }
+      updateProfileSummaryUI();
+      renderFineTuneButtons();
+      renderCategoryContent();
+      renderAiProactiveList();
+      const label = BABY_AGE_OPTIONS.find(o => o.id === val)?.label || '';
+      showToast(`👶 赤ちゃん月齢を「${label}」に調整しました`);
+    }
+
+    function setPetCountMode(val) {
+      petCountMode = val;
+      if (val === 'multi') {
+        proactiveItems = proactiveItems.map(it =>
+          it.id === 'p_sheet'
+            ? { ...it, name: '超吸収ペットシーツ（2パック）', price: 2240, reason: '多頭飼いペース：消費2倍のため2パック推奨' }
+            : it
+        );
+      } else {
+        proactiveItems = proactiveItems.map(it =>
+          it.id === 'p_sheet'
+            ? { ...it, name: '超吸収ペットシーツ', price: 1180, reason: '前回購入から12日経過（残りわずか）' }
+            : it
+        );
+      }
+      updateProfileSummaryUI();
+      renderFineTuneButtons();
+      renderCategoryContent();
+      renderAiProactiveList();
+      const label = PET_COUNT_OPTIONS.find(o => o.id === val)?.label || '';
+      showToast(`🐾 ペット頭数を「${label}」に調整しました`);
+    }
+
+    function renderFamilyPresetList() {
+      const container = document.getElementById('family-preset-list');
+      if (!container) return;
+      container.innerHTML = Object.values(FAMILY_PROFILES).map(prof => {
+        const isSelected = prof.id === activeFamilyProfile;
+        return `
+          <button type="button"
+                  onclick="applyFamilyProfile('${prof.id}', true)"
+                  class="w-full text-left p-3 rounded-2xl border-2 transition-all ${
+                    isSelected
+                      ? 'border-[#10B981] bg-emerald-950/60 shadow-md'
+                      : 'border-slate-700 bg-slate-800/80 hover:bg-slate-800'
+                  }">
+            <div class="flex items-center justify-between gap-2 mb-0.5">
+              <span class="text-xs font-black text-white">${prof.emoji} ${prof.title}</span>
+              <span class="text-[10px] font-black px-2 py-0.5 rounded-full shrink-0 ${
+                isSelected ? 'bg-[#10B981] text-white' : 'bg-slate-700 text-slate-300'
+              }">
+                ${isSelected ? '✓ 適用中' : '選択'}
+              </span>
+            </div>
+            <p class="text-[11px] text-slate-300 leading-snug">${prof.desc}</p>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function renderFineTuneButtons() {
+      const hhEl = document.getElementById('tune-household-btns');
+      const babyEl = document.getElementById('tune-baby-btns');
+      const petEl = document.getElementById('tune-pet-btns');
+      if (!hhEl || !babyEl || !petEl) return;
+
+      hhEl.innerHTML = HOUSEHOLD_OPTIONS.map(opt => {
+        const active = householdSize === opt.id;
+        return `
+          <button type="button"
+                  onclick="setHouseholdSize('${opt.id}')"
+                  class="py-2 px-2 rounded-xl text-[11px] font-black border transition-all ${
+                    active ? 'bg-[#10B981] border-[#10B981] text-white' : 'bg-slate-900 border-slate-700 text-slate-300'
+                  }">
+            ${opt.label}
+          </button>
+        `;
+      }).join('');
+
+      babyEl.innerHTML = BABY_AGE_OPTIONS.map(opt => {
+        const active = babyAgeStage === opt.id;
+        return `
+          <button type="button"
+                  onclick="setBabyAgeStage('${opt.id}')"
+                  class="py-2 px-1.5 rounded-xl text-[10px] font-black border transition-all ${
+                    active ? 'bg-[#10B981] border-[#10B981] text-white' : 'bg-slate-900 border-slate-700 text-slate-300'
+                  }">
+            ${opt.label}
+          </button>
+        `;
+      }).join('');
+
+      petEl.innerHTML = PET_COUNT_OPTIONS.map(opt => {
+        const active = petCountMode === opt.id;
+        return `
+          <button type="button"
+                  onclick="setPetCountMode('${opt.id}')"
+                  class="py-2 px-1.5 rounded-xl text-[10px] font-black border transition-all ${
+                    active ? 'bg-[#10B981] border-[#10B981] text-white' : 'bg-slate-900 border-slate-700 text-slate-300'
+                  }">
+            ${opt.label}
+          </button>
+        `;
+      }).join('');
+    }
+
+    // =========================================================================
+    // 7. 現在の世帯・月齢・頭数に応じた一括セット解決ヘルパー
+    // =========================================================================
+    function resolveBundleVariant(catId, bundleObj) {
+      if ((catId === 'food' || catId === 'daily') && householdSize === 'family' && bundleObj.family) {
+        return { ...bundleObj.family, badge: bundleObj.badge };
+      }
+      if (catId === 'baby' && babyAgeStage === '0_6m' && bundleObj.baby_0_6m) {
+        return { ...bundleObj.baby_0_6m, badge: bundleObj.badge };
+      }
+      if (catId === 'pet' && petCountMode === 'multi' && bundleObj.multiPet) {
+        return { ...bundleObj.multiPet, badge: bundleObj.badge };
+      }
+      return { ...bundleObj.base, badge: bundleObj.badge, aiTag: null };
+    }
+
+    function cycleCategoryBundle() {
+      const cat = CATALOG[activeCategory];
+      const totalSets = cat.bundles.length;
+      bundleIndexByCategory[activeCategory] = (bundleIndexByCategory[activeCategory] + 1) % totalSets;
+      renderCategoryContent();
+      const idx = bundleIndexByCategory[activeCategory] + 1;
+      showToast(`↻ ${cat.label}のおすすめセット (${idx}/${totalSets}) に切り替えました`);
+    }
+
+    // =========================================================================
+    // 8. 全商品フラットリスト取得
+    // =========================================================================
+    function getAllCatalogItems() {
+      const allItems = [];
+      const seen = new Set();
+      Object.values(CATALOG).forEach(cat => {
+        cat.staples.forEach(s => {
+          if (!seen.has(s.id)) {
+            seen.add(s.id);
+            allItems.push({ id: s.id, name: s.name, price: s.price, emoji: s.emoji, boughtYesterday: Boolean(s.boughtYesterday) });
+          }
+        });
+        cat.bundles.forEach(b => {
+          b.base.items.forEach(bi => {
+            if (!seen.has(bi.id)) {
+              seen.add(bi.id);
+              allItems.push({ id: bi.id, name: bi.name, price: bi.price, emoji: bi.emoji, boughtYesterday: false });
+            }
+          });
+        });
+        cat.swipeItems.forEach(sw => {
+          if (!seen.has(sw.id)) {
+            seen.add(sw.id);
+            allItems.push({ id: sw.id, name: sw.name, price: sw.price, emoji: sw.emoji, boughtYesterday: false });
+          }
+        });
+      });
+      return allItems;
+    }
+
+    // =========================================================================
+    // 9. Gemini APIキー保存
+    // =========================================================================
+    function saveApiKeyFromInput(inputId) {
+      const val = document.getElementById(inputId).value.trim();
+      geminiApiKey = val;
+
+      const headerBadge = document.getElementById('ai-mode-badge');
+      const voiceLabel = document.getElementById('voice-engine-label');
+
+      if (geminiApiKey) {
+        if (headerBadge) {
+          headerBadge.textContent = 'Gemini API連携中';
+          headerBadge.className = 'text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full';
+        }
+        if (voiceLabel) voiceLabel.textContent = 'Gemini 2.5 Flash リアルタイム解析';
+        showToast('✨ Gemini APIと連携しました！');
+      } else {
+        if (headerBadge) {
+          headerBadge.textContent = 'AIデモ稼働中';
+          headerBadge.className = 'text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full';
+        }
+        if (voiceLabel) voiceLabel.textContent = '内蔵AI解析モード';
+        showToast('内蔵AIデモモードに切り替えました');
+      }
+    }
+
+    // =========================================================================
+    // 10. カテゴリタブ描画
+    // =========================================================================
+    function renderCategoryTabs() {
+      const container = document.getElementById('category-tabs');
+      container.innerHTML = Object.values(CATALOG).map(cat => {
+        const isActive = cat.id === activeCategory;
+        return `
+          <button type="button"
+                  onclick="selectCategory('${cat.id}')"
+                  class="py-3 px-1 rounded-2xl border-2 font-black text-xs flex flex-col items-center justify-center gap-1 transition-all active:scale-95 ${
+                    isActive
+                      ? 'bg-[#10B981] border-[#10B981] text-white shadow-md shadow-emerald-500/25'
+                      : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-300'
+                  }">
+            <span class="text-xl leading-none">${cat.emoji}</span>
+            <span>${cat.label}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function selectCategory(catId) {
+      activeCategory = catId;
+      renderCategoryTabs();
+      renderCategoryContent();
+    }
+
+    // =========================================================================
+    // 11. カテゴリ別の一括セット・定番・スワイプ商品描画
+    // =========================================================================
+    function renderCategoryContent() {
+      const cat = CATALOG[activeCategory];
+      const currentIdx = bundleIndexByCategory[activeCategory] || 0;
+      const totalSets = cat.bundles.length;
+      const rawBundle = cat.bundles[currentIdx];
+      const b = resolveBundleVariant(activeCategory, rawBundle);
+
+      document.getElementById('bundle-card-container').innerHTML = `
+        <div class="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm">
+          <div class="flex items-center justify-between gap-1.5 mb-1.5">
+            <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+              <span class="bg-orange-100 text-orange-800 text-[10px] font-black px-2.5 py-0.5 rounded-full shrink-0">
+                ✨ ${b.badge}
+              </span>
+              ${
+                b.aiTag
+                  ? `<span class="bg-blue-50 text-blue-700 border border-blue-200 text-[9px] font-black px-2 py-0.5 rounded-full shrink-0">${b.aiTag}</span>`
+                  : ''
+              }
+            </div>
+            <button type="button"
+                    onclick="cycleCategoryBundle()"
+                    class="shrink-0 bg-slate-100 hover:bg-emerald-50 active:scale-95 text-slate-700 hover:text-emerald-800 border border-slate-200 text-[10px] font-black px-2.5 py-1 rounded-full transition-all flex items-center gap-1">
+              <span>別のセット ↻</span>
+              <span class="text-slate-400">${currentIdx + 1}/${totalSets}</span>
+            </button>
+          </div>
+          <h3 class="text-sm font-black text-slate-900 leading-snug mb-1">${b.title}</h3>
+          <p class="text-[11px] text-slate-500 mb-3">${b.subtitle}</p>
+          <button type="button"
+                  onclick="addBundleToCart()"
+                  class="w-full py-3.5 px-4 bg-[#10B981] hover:bg-[#059669] active:scale-[0.98] text-white font-black text-xs rounded-2xl shadow-md shadow-emerald-500/25 flex items-center justify-between transition-all">
+            <span>一括でカートに入れる</span>
+            <span class="bg-white text-emerald-800 font-black px-2.5 py-1 rounded-xl text-xs">
+              合計 ¥${b.price.toLocaleString()} ＋
+            </span>
+          </button>
+        </div>
+      `;
+
+      document.getElementById('staples-heading').textContent = `${cat.emoji} ${cat.label}のいつもの定番`;
+      document.getElementById('staples-grid').innerHTML = cat.staples.map(item => {
+        const inCart = cart.find(c => c.id === item.id);
+        return `
+          <button type="button"
+                  onclick="handleItemAddClick('${item.id}', '${item.name}', ${item.price}, '${item.emoji}', ${Boolean(item.boughtYesterday)})"
+                  class="text-left bg-white hover:bg-emerald-50/50 active:scale-95 border ${
+                    inCart ? 'border-[#10B981] ring-1 ring-[#10B981]/40' : item.boughtYesterday ? 'border-amber-300 bg-amber-50/20' : 'border-slate-200'
+                  } rounded-2xl p-3 shadow-sm transition-all flex flex-col justify-between gap-2 relative">
+            ${
+              inCart
+                ? `<span class="absolute top-2 right-2 bg-[#10B981] text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                     カート内 ${inCart.qty}
+                   </span>`
+                : item.boughtYesterday
+                ? `<span class="absolute top-2 right-2 bg-amber-100 text-amber-900 text-[9px] font-black px-1.5 py-0.5 rounded-full">
+                     昨日購入済み
+                   </span>`
+                : `<span class="absolute top-2 right-2 bg-slate-100 text-slate-500 text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                     いつもの定番
+                   </span>`
+            }
+            <div class="flex items-center gap-2 pt-2">
+              <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-2xl shrink-0">
+                ${item.emoji}
+              </div>
+              <div class="min-w-0">
+                <div class="text-xs font-black text-slate-900 leading-tight line-clamp-2">${item.name}</div>
+                <div class="text-[10px] text-slate-400 font-bold mt-0.5">${item.spec}</div>
+              </div>
+            </div>
+            <div class="flex items-center justify-between pt-1.5 border-t border-slate-100">
+              <span class="text-sm font-black text-slate-900">¥${item.price.toLocaleString()}</span>
+              <span class="bg-emerald-100 text-emerald-800 text-[11px] font-black px-2.5 py-1 rounded-xl">
+                ＋ 追加
+              </span>
+            </div>
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('swipe-list').innerHTML = cat.swipeItems.map(item => `
+        <div class="relative rounded-2xl overflow-hidden bg-[#10B981] shadow-sm border border-slate-200">
+          <div class="absolute inset-0 flex items-center pl-5 text-white font-black text-xs gap-2">
+            <span class="text-base">✓</span>
+            <span>カートに追加！</span>
+          </div>
+          <div class="swipe-card-fg relative bg-white p-3.5 flex items-center justify-between gap-3 cursor-grab active:cursor-grabbing"
+               data-id="${item.id}"
+               data-name="${item.name}"
+               data-price="${item.price}"
+               data-emoji="${item.emoji}">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl shrink-0">
+                ${item.emoji}
+              </div>
+              <div class="min-w-0">
+                <div class="text-xs font-black text-slate-900 truncate">${item.name}</div>
+                <div class="text-[11px] text-slate-500 font-bold">${item.spec} ・ <span class="text-slate-900 font-black">¥${item.price.toLocaleString()}</span></div>
+              </div>
+            </div>
+            <div class="shrink-0 flex items-center gap-1 text-[11px] font-black text-[#059669] bg-emerald-50 px-2.5 py-1.5 rounded-xl">
+              <span>右スワイプ</span>
+              <span>➔</span>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      attachSwipeListeners();
+    }
+
+    // =========================================================================
+    // 12. スワイプ＆タップ操作イベント
+    // =========================================================================
+    function attachSwipeListeners() {
+      const cards = document.querySelectorAll('.swipe-card-fg');
+      cards.forEach(card => {
+        let startX = 0;
+        let currentX = 0;
+        let isDragging = false;
+
+        const onStart = (clientX) => {
+          startX = clientX;
+          currentX = 0;
+          isDragging = true;
+          card.style.transition = 'none';
+        };
+
+        const onMove = (clientX) => {
+          if (!isDragging) return;
+          const diff = clientX - startX;
+          if (diff > 0) {
+            currentX = Math.min(diff, 145);
+            card.style.transform = `translateX(${currentX}px)`;
+          }
+        };
+
+        const onEnd = () => {
+          if (!isDragging) return;
+          isDragging = false;
+          card.style.transition = 'transform 0.25s cubic-bezier(0.22, 1, 0.36, 1)';
+
+          const { id, name, price, emoji } = card.dataset;
+          if (currentX >= 65) {
+            card.style.transform = 'translateX(130px)';
+            addToCart(id, name, Number(price), emoji);
+            setTimeout(() => {
+              card.style.transform = 'translateX(0px)';
+            }, 220);
+          } else if (Math.abs(currentX) < 6) {
+            card.style.transform = 'translateX(0px)';
+            addToCart(id, name, Number(price), emoji);
+          } else {
+            card.style.transform = 'translateX(0px)';
+          }
+        };
+
+        card.addEventListener('touchstart', (e) => onStart(e.touches[0].clientX), { passive: true });
+        card.addEventListener('touchmove', (e) => onMove(e.touches[0].clientX), { passive: true });
+        card.addEventListener('touchend', onEnd);
+
+        card.addEventListener('mousedown', (e) => onStart(e.clientX));
+        window.addEventListener('mousemove', (e) => { if (isDragging) onMove(e.clientX); });
+        window.addEventListener('mouseup', () => { if (isDragging) onEnd(); });
+      });
+    }
+
+    // =========================================================================
+    // 13. 重複買い防止ガード付き追加処理
+    // =========================================================================
+    function handleItemAddClick(id, name, price, emoji, boughtYesterday) {
+      const existing = cart.find(c => c.id === id);
+      if (boughtYesterday || (existing && existing.qty >= 2)) {
+        pendingDuplicateItem = { id, name, price, emoji };
+        const reasonLabel = boughtYesterday ? '昨日購入済み' : `すでにカートに${existing.qty}点入っています`;
+        document.getElementById('dup-item-desc').textContent = `対象：${name}（¥${price.toLocaleString()} / ${reasonLabel}）`;
+        openDuplicateModal();
+        return;
+      }
+      addToCart(id, name, price, emoji);
+    }
+
+    function openDuplicateModal() {
+      const backdrop = document.getElementById('dup-backdrop');
+      const panel = document.getElementById('dup-panel');
+      backdrop.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        backdrop.classList.remove('opacity-0');
+        panel.classList.remove('translate-y-full');
+      });
+    }
+
+    function closeDuplicateModal() {
+      const backdrop = document.getElementById('dup-backdrop');
+      const panel = document.getElementById('dup-panel');
+      backdrop.classList.add('opacity-0');
+      panel.classList.add('translate-y-full');
+      setTimeout(() => {
+        backdrop.classList.add('hidden');
+      }, 280);
+    }
+
+    function forceAddDuplicateItem() {
+      if (pendingDuplicateItem) {
+        const { id, name, price, emoji } = pendingDuplicateItem;
+        addToCart(id, name, price, emoji);
+        pendingDuplicateItem = null;
+      }
+      closeDuplicateModal();
+    }
+
+    // =========================================================================
+    // 14. カート追加・一括追加・数量変更
+    // =========================================================================
+    function addToCart(id, name, price, emoji) {
+      const existing = cart.find(item => item.id === id);
+      if (existing) {
+        existing.qty += 1;
+      } else {
+        cart.push({ id, name, price, emoji, qty: 1 });
+      }
+      showToast(`${emoji}「${name}」をカートに入れました`);
+      updateCartUI();
+      renderCategoryContent();
+      renderAiProactiveList();
+      renderVoiceResults();
+    }
+
+    function addBundleToCart() {
+      const cat = CATALOG[activeCategory];
+      const currentIdx = bundleIndexByCategory[activeCategory] || 0;
+      const bundle = resolveBundleVariant(activeCategory, cat.bundles[currentIdx]);
+
+      bundle.items.forEach(item => {
+        const addCount = item.qty || 1;
+        const existing = cart.find(c => c.id === item.id);
+        if (existing) {
+          existing.qty += addCount;
+        } else {
+          cart.push({ id: item.id, name: item.name, price: item.price, emoji: item.emoji, qty: addCount });
+        }
+      });
+      showToast(`✨「${bundle.title}」を一括追加しました！`);
+      updateCartUI();
+      renderCategoryContent();
+    }
+
+    function changeQty(id, delta) {
+      const idx = cart.findIndex(item => item.id === id);
+      if (idx === -1) return;
+      cart[idx].qty += delta;
+      if (cart[idx].qty <= 0) {
+        cart.splice(idx, 1);
+      }
+      updateCartUI();
+      renderCategoryContent();
+      renderAiProactiveList();
+      renderVoiceResults();
+    }
+
+    // =========================================================================
+    // 15. カートUI更新（0点のときはバッジを非表示にし「カート (¥0)」を表示）
+    // =========================================================================
+    function updateCartUI() {
+      const totalQty = cart.reduce((sum, item) => sum + item.qty, 0);
+      const totalPrice = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
+
+      const badgeEl = document.getElementById('cart-badge');
+      badgeEl.textContent = totalQty;
+      if (totalQty > 0) {
+        badgeEl.classList.remove('hidden');
+      } else {
+        badgeEl.classList.add('hidden');
+      }
+
+      document.getElementById('nav-cart-label').textContent = `カート (¥${totalPrice.toLocaleString()})`;
+      document.getElementById('summary-subtotal').textContent = `¥${totalPrice.toLocaleString()}`;
+      document.getElementById('summary-total').textContent = `¥${totalPrice.toLocaleString()}`;
+      document.getElementById('confirm-btn-price').textContent = `¥${totalPrice.toLocaleString()}`;
+      document.getElementById('confirm-order-btn').disabled = totalQty === 0;
+
+      const listEl = document.getElementById('cart-items-list');
+      const settingsEl = document.getElementById('checkout-settings');
+
+      if (cart.length === 0) {
+        settingsEl.classList.add('hidden');
+        listEl.innerHTML = `
+          <div class="bg-white rounded-3xl p-8 border border-slate-200 text-center space-y-3">
+            <div class="text-4xl">🛒</div>
+            <p class="text-sm font-black text-slate-800">カートは空です</p>
+            <p class="text-xs text-slate-500">ホームの定番1タップや「🎤 声で頼む」から追加できます。</p>
+            <button type="button" onclick="switchScreen('home')" class="mt-2 px-5 py-3 bg-[#10B981] text-white font-black text-xs rounded-2xl">
+              商品を選びに行く
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      settingsEl.classList.remove('hidden');
+      listEl.innerHTML = cart.map(item => `
+        <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm flex items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center text-xl shrink-0">
+              ${item.emoji}
+            </div>
+            <div class="min-w-0">
+              <div class="text-xs font-black text-slate-900 truncate">${item.name}</div>
+              <div class="text-xs font-black text-[#10B981]">¥${(item.price * item.qty).toLocaleString()}</div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 shrink-0">
+            <button type="button"
+                    onclick="changeQty('${item.id}', -1)"
+                    class="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-90 text-slate-800 font-black text-base flex items-center justify-center">
+              −
+            </button>
+            <span class="w-5 text-center text-xs font-black text-slate-900">${item.qty}</span>
+            <button type="button"
+                    onclick="changeQty('${item.id}', 1)"
+                    class="w-9 h-9 rounded-xl bg-emerald-100 hover:bg-emerald-200 active:scale-90 text-emerald-800 font-black text-base flex items-center justify-center">
+              ＋
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // =========================================================================
+    // 16. お届け日時・置き配・お支払い方法描画
+    // =========================================================================
+    function renderCheckoutOptions() {
+      document.getElementById('delivery-time-options').innerHTML = DELIVERY_TIMES.map(t => {
+        const active = selectedTime === t.label;
+        return `
+          <button type="button"
+                  onclick="selectTime('${t.label}')"
+                  class="w-full text-left p-3 rounded-2xl border-2 transition-all flex items-center justify-between ${
+                    active ? 'border-[#10B981] bg-emerald-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }">
+            <div>
+              <div class="text-xs font-black text-slate-900">${t.label}</div>
+              <div class="text-[10px] font-bold text-slate-500">${t.sub}</div>
+            </div>
+            <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs font-black ${
+              active ? 'bg-[#10B981] text-white' : 'bg-slate-100 text-transparent'
+            }">✓</span>
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('dropoff-options').innerHTML = DROPOFF_PLACES.map(d => {
+        const active = selectedDropoff === d.label;
+        return `
+          <button type="button"
+                  onclick="selectDropoff('${d.label}')"
+                  class="p-3 rounded-2xl border-2 transition-all flex items-center gap-2 text-left ${
+                    active ? 'border-[#10B981] bg-emerald-50/70' : 'border-slate-200 bg-white hover:bg-slate-50'
+                  }">
+            <span class="text-lg shrink-0">${d.emoji}</span>
+            <span class="text-[11px] font-black text-slate-900 leading-tight">${d.label}</span>
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('payment-options').innerHTML = PAYMENT_METHODS.map(p => {
+        const active = selectedPayment === p.label;
+        return `
+          <button type="button"
+                  onclick="selectPayment('${p.label}')"
+                  class="py-2.5 px-1.5 rounded-2xl border-2 transition-all flex flex-col items-center justify-center gap-1 ${
+                    active ? 'border-[#10B981] bg-emerald-50/70 text-emerald-900' : 'border-slate-200 bg-white text-slate-700'
+                  }">
+            <span class="text-base">${p.emoji}</span>
+            <span class="text-[10px] font-black">${p.label}</span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function selectTime(v) { selectedTime = v; renderCheckoutOptions(); }
+    function selectDropoff(v) { selectedDropoff = v; renderCheckoutOptions(); }
+    function selectPayment(v) { selectedPayment = v; renderCheckoutOptions(); }
+
+    // =========================================================================
+    // 17. AI先回り提案シート描画＆Geminiリアルタイム再分析
+    // =========================================================================
+    function renderAiProactiveList() {
+      const total = proactiveItems.reduce((s, i) => s + i.price, 0);
+      document.getElementById('ai-proactive-total').textContent = `¥${total.toLocaleString()}`;
+
+      document.getElementById('ai-proactive-list').innerHTML = proactiveItems.map(item => {
+        const inCart = cart.find(c => c.id === item.id);
+        return `
+          <div class="bg-white rounded-2xl p-3.5 border ${
+            inCart ? 'border-[#10B981] bg-emerald-50/30' : 'border-slate-200'
+          } shadow-sm flex items-center justify-between gap-2.5">
+            <div class="flex items-center gap-3 min-w-0">
+              <div class="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center text-2xl shrink-0">
+                ${item.emoji}
+              </div>
+              <div class="min-w-0">
+                <div class="text-xs font-black text-slate-900 truncate">${item.name} <span class="text-[#10B981]">¥${item.price.toLocaleString()}</span></div>
+                <div class="text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md mt-1 inline-block">
+                  ${item.reason}
+                </div>
+              </div>
+            </div>
+            <button type="button"
+                    onclick="addToCart('${item.id}', '${item.name}', ${item.price}, '${item.emoji}')"
+                    class="shrink-0 py-2.5 px-3 rounded-xl font-black text-xs active:scale-95 transition-all ${
+                      inCart
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-[#2563EB] hover:bg-blue-600 text-white shadow'
+                    }">
+              ${inCart ? `✓ 追加済(${inCart.qty})` : '＋ 入れる'}
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    async function refreshProactiveWithGemini() {
+      const listEl = document.getElementById('ai-proactive-list');
+      const prof = FAMILY_PROFILES[activeFamilyProfile];
+      listEl.innerHTML = `<div class="p-6 text-center text-xs font-black text-blue-700 bg-blue-50 rounded-2xl animate-pulse">🤖 「${prof.shortTag}」の購買サイクルから再予測中...</div>`;
+
+      const allItems = getAllCatalogItems();
+
+      if (geminiApiKey) {
+        try {
+          const prompt = `あなたは宅配アプリ「らくデリ」のAIです。
+現在の家族プロフィール: ${prof.title}（${prof.desc} / 世帯:${householdSize}, 赤ちゃん:${babyAgeStage}, ペット:${petCountMode}）
+現在のカート内容: ${JSON.stringify(cart.map(c => c.name))}
+以下の商品リストから、この家庭でそろそろ切れそうな定番品を3つ選び、購入サイクル理由を添えてJSONで返してください。
+商品リスト: ${JSON.stringify(allItems)}
+出力JSON形式: {"items": [{"id": "商品id", "reason": "前回購入から○日経過などの短い理由"}]}`;
+
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { responseMimeType: 'application/json' }
+            })
+          });
+
+          const data = await response.json();
+          const rawJson = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawJson) {
+            const parsed = JSON.parse(rawJson);
+            const updated = (parsed.items || []).map(entry => {
+              const found = allItems.find(it => it.id === entry.id);
+              return found ? { ...found, reason: entry.reason || 'Gemini AIサイクル予測' } : null;
+            }).filter(Boolean);
+
+            if (updated.length > 0) {
+              proactiveItems = updated;
+              renderAiProactiveList();
+              return;
+            }
+          }
+        } catch (err) {
+          // エラー時は内蔵予測へフォールバック
+        }
+      }
+
+      await new Promise(r => setTimeout(r, 380));
+      proactiveItems = prof.proactiveItems.map(item => ({ ...item }));
+      renderAiProactiveList();
+    }
+
+    function openAiProactiveSheet() {
+      renderAiProactiveList();
+      const backdrop = document.getElementById('ai-proactive-backdrop');
+      const panel = document.getElementById('ai-proactive-panel');
+      backdrop.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        backdrop.classList.remove('opacity-0');
+        panel.classList.remove('translate-y-full');
+      });
+    }
+
+    function closeAiProactiveSheet() {
+      const backdrop = document.getElementById('ai-proactive-backdrop');
+      const panel = document.getElementById('ai-proactive-panel');
+      backdrop.classList.add('opacity-0');
+      panel.classList.add('translate-y-full');
+      setTimeout(() => { backdrop.classList.add('hidden'); }, 300);
+    }
+
+    function addAllAiProactiveItems() {
+      proactiveItems.forEach(item => {
+        const existing = cart.find(c => c.id === item.id);
+        if (existing) {
+          existing.qty += 1;
+        } else {
+          cart.push({ id: item.id, name: item.name, price: item.price, emoji: item.emoji, qty: 1 });
+        }
+      });
+      showToast(`🤖 切れそうな定番${proactiveItems.length}品をまとめて追加しました！`);
+      updateCartUI();
+      renderCategoryContent();
+      renderAiProactiveList();
+      setTimeout(closeAiProactiveSheet, 320);
+    }
+
+    // =========================================================================
+    // 18. 音声認識＆声で頼むシート制御
+    // =========================================================================
+    function initSpeechRecognition() {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SpeechRecognition) return;
+
+      recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onstart = () => {
+        isListening = true;
+        const btn = document.getElementById('mic-record-btn');
+        btn.classList.add('mic-listening', 'bg-red-600');
+        btn.classList.remove('bg-[#2563EB]');
+        document.getElementById('mic-status-text').textContent = '聞いています... そのまま話してください';
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        runVoicePrompt(transcript);
+      };
+
+      recognition.onerror = () => {
+        stopListeningUI();
+        showToast('音声を聞き取れませんでした。テキスト入力か例文をお試しください！');
+      };
+
+      recognition.onend = () => {
+        stopListeningUI();
+      };
+    }
+
+    function stopListeningUI() {
+      isListening = false;
+      const btn = document.getElementById('mic-record-btn');
+      btn.classList.remove('mic-listening', 'bg-red-600');
+      btn.classList.add('bg-[#2563EB]');
+      document.getElementById('mic-status-text').textContent = 'タップして話す';
+    }
+
+    function toggleSpeechRecognition() {
+      if (!recognition) {
+        showToast('マイク非対応環境のため、テキスト入力か下の例文をお試しください');
+        return;
+      }
+      if (isListening) {
+        recognition.stop();
+      } else {
+        try {
+          recognition.start();
+        } catch (e) {
+          showToast('マイクを起動できませんでした。テキスト入力か下の例文をお試しください');
+        }
+      }
+    }
+
+    function submitManualVoiceText() {
+      const input = document.getElementById('voice-manual-input');
+      const val = input.value.trim();
+      if (!val) return;
+      input.value = '';
+      runVoicePrompt(val);
+    }
+
+    function openVoiceSheet() {
+      const backdrop = document.getElementById('voice-backdrop');
+      const panel = document.getElementById('voice-panel');
+      backdrop.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        backdrop.classList.remove('opacity-0');
+        panel.classList.remove('translate-y-full');
+      });
+    }
+
+    function closeVoiceSheet() {
+      if (isListening && recognition) recognition.stop();
+      const backdrop = document.getElementById('voice-backdrop');
+      const panel = document.getElementById('voice-panel');
+      backdrop.classList.add('opacity-0');
+      panel.classList.add('translate-y-full');
+      setTimeout(() => { backdrop.classList.add('hidden'); }, 300);
+    }
+
+    // =========================================================================
+    // 19. 音声発話のAI解析（「声で頼んだ商品」と「AIからのついで買い提案」を完全分離）
+    // =========================================================================
+    async function runVoicePrompt(utterance) {
+      const recBox = document.getElementById('recognized-box');
+      const recText = document.getElementById('recognized-text');
+      const resArea = document.getElementById('voice-result-area');
+      const reqCards = document.getElementById('voice-requested-cards');
+      const optSection = document.getElementById('voice-optional-section');
+      const resReason = document.getElementById('voice-ai-reason');
+      const footer = document.getElementById('voice-footer');
+
+      recBox.classList.remove('hidden');
+      recText.textContent = utterance;
+      resArea.classList.remove('hidden');
+      optSection.classList.add('hidden');
+      resReason.textContent = '音声を解析中...';
+      reqCards.innerHTML = `<div class="p-4 text-center text-xs font-bold text-blue-700 bg-blue-50 rounded-2xl animate-pulse">🎤 声で頼んだ商品を特定しています...</div>`;
+      footer.classList.add('hidden');
+
+      const allItems = getAllCatalogItems();
+      const prof = FAMILY_PROFILES[activeFamilyProfile];
+      let requested = [];
+      let optional = [];
+      let reasonSummary = '';
+
+      if (geminiApiKey) {
+        try {
+          const prompt = `あなたは宅配買い物アプリ「らくデリ」のAIです。
+家族プロフィール: ${prof.title}
+ユーザーのつぶやきから、
+1) "requested_ids": ユーザーが【実際に言葉で注文・希望した商品】のidのみ（言っていない牛乳などを絶対に混ぜないこと！）
+2) "optional_ids": それとは別にAIが関連おすすめとして任意提案する商品id（0〜2個）
+を厳密に分けてJSONで返してください。
+商品リスト: ${JSON.stringify(allItems)}
+ユーザーのつぶやき: "${utterance}"
+出力JSON形式: {"reason": "短い説明(20字以内)", "requested_ids": ["商品id"], "optional_ids": ["関連商品id"]}`;
+
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(geminiApiKey)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { responseMimeType: 'application/json' }
+            })
+          });
+
+          const data = await response.json();
+          const rawJson = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawJson) {
+            const parsed = JSON.parse(rawJson);
+            reasonSummary = parsed.reason || 'Gemini API音声特定';
+            requested = (parsed.requested_ids || [])
+              .map(id => allItems.find(item => item.id === id))
+              .filter(Boolean);
+            optional = (parsed.optional_ids || [])
+              .filter(id => !(parsed.requested_ids || []).includes(id))
+              .map(id => allItems.find(item => item.id === id))
+              .filter(Boolean);
+          }
+        } catch (err) {
+          // エラー時は内蔵音声解析へフォールバック
+        }
+      }
+
+      if (requested.length === 0) {
+        await new Promise(r => setTimeout(r, 320));
+
+        const keywordMap = [
+          { keys: ['おむつ', 'オムツ'], id: 'b_diaper' },
+          { keys: ['粉ミルク'], id: 'b_milk' },
+          { keys: ['牛乳', 'ミルク'], id: 'f_milk' },
+          { keys: ['たまご', '卵', 'タマゴ'], id: 'f_egg' },
+          { keys: ['米', 'こめ'], id: 'f_rice' },
+          { keys: ['パン', '食パン'], id: 'f_bread' },
+          { keys: ['納豆', 'なっとう'], id: 'f_natto' },
+          { keys: ['バナナ'], id: 'f_banana' },
+          { keys: ['ベビーフード', '離乳食'], id: 'b_food' },
+          { keys: ['おしりふき'], id: 'b_wipes' },
+          { keys: ['ドッグフード', 'フード', '犬'], id: 'p_dog' },
+          { keys: ['猫砂', 'ねこすな'], id: 'p_sand' },
+          { keys: ['ペットシーツ', 'シーツ'], id: 'p_sheet' },
+          { keys: ['ちゅーる', 'ちゅ〜る'], id: 'p_churu' },
+          { keys: ['洗剤'], id: 'd_detergent' },
+          { keys: ['ティッシュ'], id: 'd_tissue' },
+          { keys: ['トイレットペーパー'], id: 'd_tp' },
+          { keys: ['食器'], id: 'd_dish' },
+          { keys: ['豚肉', '豚こま'], id: 'rec_pork' },
+          { keys: ['キャベツ'], id: 'rec_cabbage' }
+        ];
+
+        let normalizedUtterance = utterance;
+        if (normalizedUtterance.includes('粉ミルク')) {
+          const foundPowder = allItems.find(it => it.id === 'b_milk');
+          if (foundPowder) requested.push(foundPowder);
+          normalizedUtterance = normalizedUtterance.replace(/粉ミルク/g, '');
+        }
+
+        if (normalizedUtterance.includes('夕飯') || normalizedUtterance.includes('時短')) {
+          requested = [...CATALOG.food.bundles[0].base.items];
+          reasonSummary = '時短レシピの材料を特定';
+        } else {
+          keywordMap.forEach(entry => {
+            if (entry.keys.some(k => normalizedUtterance.includes(k))) {
+              const found = allItems.find(it => it.id === entry.id);
+              if (found && !requested.some(r => r.id === found.id)) {
+                requested.push(found);
+              }
+            }
+          });
+          if (requested.length > 0) {
+            reasonSummary = `発話から${requested.length}点を特定`;
+          }
+        }
+
+        if (requested.length === 0) {
+          const fallback = allItems.find(it => it.id === 'f_milk');
+          if (fallback) requested.push(fallback);
+          reasonSummary = '定番から特定';
+        }
+
+        // セクション2：AIからのついで買い提案（注文商品には絶対含めない・任意で個別追加のみ）
+        const reqIds = new Set(requested.map(r => r.id));
+        if (reqIds.has('b_diaper') && !reqIds.has('b_wipes')) {
+          const wipes = allItems.find(it => it.id === 'b_wipes');
+          if (wipes) optional.push({ ...wipes, aiNote: 'おむつと一緒に頼む方が多い定番です' });
+        } else if (reqIds.has('f_milk') && !reqIds.has('f_bread')) {
+          const bread = allItems.find(it => it.id === 'f_bread');
+          if (bread) optional.push({ ...bread, aiNote: '朝食の定番セットとしておすすめ' });
+        } else if (reqIds.has('p_sheet') || reqIds.has('p_dog')) {
+          const churu = allItems.find(it => it.id === 'p_churu');
+          if (churu && !reqIds.has('p_churu')) optional.push({ ...churu, aiNote: '愛犬・愛猫のご褒美についで買い' });
+        } else if (reqIds.has('d_tp') || reqIds.has('d_detergent')) {
+          const tissue = allItems.find(it => it.id === 'd_tissue');
+          if (tissue && !reqIds.has('d_tissue')) optional.push({ ...tissue, aiNote: '日用品ストックのついで補充に' });
+        }
+      }
+
+      currentVoiceRequested = requested;
+      currentVoiceOptional = optional;
+      resReason.textContent = reasonSummary;
+
+      renderVoiceResults();
+      footer.classList.remove('hidden');
+    }
+
+    function renderVoiceResults() {
+      const reqCards = document.getElementById('voice-requested-cards');
+      const optSection = document.getElementById('voice-optional-section');
+      const optCards = document.getElementById('voice-optional-cards');
+      const btnText = document.getElementById('voice-confirm-btn-text');
+
+      if (!reqCards) return;
+
+      // セクション1：声で頼んだ商品（注文対象）
+      reqCards.innerHTML = currentVoiceRequested.map(item => `
+        <div class="bg-white rounded-2xl p-3.5 border-2 border-[#10B981] shadow-sm flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <span class="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center text-2xl shrink-0">${item.emoji}</span>
+            <div class="min-w-0">
+              <div class="text-xs font-black text-slate-900 truncate">${item.name}</div>
+              <div class="text-xs font-black text-[#10B981]">¥${item.price.toLocaleString()}</div>
+            </div>
+          </div>
+          <span class="shrink-0 text-[10px] font-black text-emerald-800 bg-emerald-100 px-2.5 py-1 rounded-full">
+            ✓ 注文対象
+          </span>
+        </div>
+      `).join('');
+
+      const reqCount = currentVoiceRequested.length;
+      const reqTotal = currentVoiceRequested.reduce((sum, i) => sum + i.price, 0);
+      if (btnText) {
+        btnText.textContent = `声で頼んだ${reqCount}点をカートに入れる（¥${reqTotal.toLocaleString()}）`;
+      }
+
+      // セクション2：AIからのついで買い提案（任意・個別追加のみ）
+      if (currentVoiceOptional.length > 0) {
+        optSection.classList.remove('hidden');
+        optCards.innerHTML = currentVoiceOptional.map(item => {
+          const inCart = cart.find(c => c.id === item.id);
+          return `
+            <div class="bg-white rounded-2xl p-3 border border-slate-200 shadow-sm flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <span class="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-xl shrink-0">${item.emoji}</span>
+                <div class="min-w-0">
+                  <div class="text-xs font-black text-slate-800 truncate">${item.name} <span class="text-slate-600">¥${item.price.toLocaleString()}</span></div>
+                  <div class="text-[10px] font-bold text-blue-700 truncate">${item.aiNote || 'AIのおすすめ関連商品'}</div>
+                </div>
+              </div>
+              <button type="button"
+                      onclick="addToCart('${item.id}', '${item.name}', ${item.price}, '${item.emoji}')"
+                      class="shrink-0 py-2 px-3 rounded-xl font-black text-xs active:scale-95 transition-all ${
+                        inCart
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                          : 'bg-slate-100 hover:bg-blue-100 text-blue-800 border border-blue-200'
+                      }">
+                ${inCart ? '✓ 追加済' : '＋ 追加'}
+              </button>
+            </div>
+          `;
+        }).join('');
+      } else {
+        optSection.classList.add('hidden');
+      }
+    }
+
+    // 緑のメインCTA：「声で頼んだ商品だけ」をカートに入れる
+    function addVoiceRequestedItemsOnly() {
+      if (currentVoiceRequested.length === 0) return;
+
+      currentVoiceRequested.forEach(item => {
+        const existing = cart.find(c => c.id === item.id);
+        if (existing) {
+          existing.qty += 1;
+        } else {
+          cart.push({ id: item.id, name: item.name, price: item.price, emoji: item.emoji, qty: 1 });
+        }
+      });
+
+      const names = currentVoiceRequested.map(i => i.name).join('・');
+      showToast(`🎤「${names}」をカートに入れました！`);
+      updateCartUI();
+      renderCategoryContent();
+      setTimeout(closeVoiceSheet, 300);
+    }
+
+    // =========================================================================
+    // 20. 画面切替
+    // =========================================================================
+    function switchScreen(name) {
+      ['home', 'cart', 'complete'].forEach(s => {
+        document.getElementById(`screen-${s}`).classList.add('hidden');
+      });
+      document.getElementById(`screen-${name}`).classList.remove('hidden');
+
+      const navHome = document.getElementById('nav-home');
+      const navCart = document.getElementById('nav-cart');
+
+      navHome.className = 'flex-1 py-2.5 px-2 rounded-2xl flex flex-col items-center justify-center gap-0.5 font-black text-xs transition-all ' +
+        (name === 'home' ? 'bg-emerald-50 text-[#10B981]' : 'text-slate-600 hover:bg-slate-100');
+
+      navCart.className = 'flex-1 py-2.5 px-2 rounded-2xl flex flex-col items-center justify-center gap-0.5 font-black text-xs transition-all relative ' +
+        (name === 'cart' ? 'bg-emerald-50 text-[#10B981]' : 'text-slate-600 hover:bg-slate-100');
+    }
+
+    // =========================================================================
+    // 21. 注文確定（決済完了と同時にカートを即座に空・0点・¥0へリセット）
+    // =========================================================================
+    function confirmOrder() {
+      if (cart.length === 0) return;
+
+      const finalizedOrder = {
+        time: selectedTime,
+        dropoff: selectedDropoff,
+        payment: selectedPayment,
+        totalPrice: cart.reduce((sum, item) => sum + item.price * item.qty, 0)
+      };
+
+      document.getElementById('done-time').textContent = finalizedOrder.time;
+      document.getElementById('done-dropoff').textContent = finalizedOrder.dropoff;
+      document.getElementById('done-payment').textContent = finalizedOrder.payment;
+      document.getElementById('done-total').textContent = `¥${finalizedOrder.totalPrice.toLocaleString()}`;
+
+      // 決済完了と同時にカート配列を即座に空にし、UIを「カート (¥0)」＆バッジ非表示にリセット
+      cart = [];
+      updateCartUI();
+      renderCategoryContent();
+      renderAiProactiveList();
+
+      switchScreen('complete');
+    }
+
+    function resetAfterOrder() {
+      cart = [];
+      updateCartUI();
+      renderCategoryContent();
+      renderAiProactiveList();
+      switchScreen('home');
+    }
+
+    // =========================================================================
+    // 22. プッシュ通知＆AI設定シート制御
+    // =========================================================================
+    function triggerDeadlineNotification() {
+      const banner = document.getElementById('push-banner');
+      banner.classList.remove('-translate-y-[180%]');
+      banner.classList.add('translate-y-0');
+
+      if (pushTimer) clearTimeout(pushTimer);
+      pushTimer = setTimeout(() => {
+        hidePushNotification();
+      }, 6500);
+    }
+
+    function hidePushNotification() {
+      const banner = document.getElementById('push-banner');
+      banner.classList.remove('translate-y-0');
+      banner.classList.add('-translate-y-[180%]');
+    }
+
+    function handleNotificationTap() {
+      hidePushNotification();
+      openAiProactiveSheet();
+    }
+
+    function openAiSettingsSheet() {
+      renderFamilyPresetList();
+      renderFineTuneButtons();
+      const backdrop = document.getElementById('ai-settings-backdrop');
+      const panel = document.getElementById('ai-settings-panel');
+      backdrop.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        backdrop.classList.remove('opacity-0');
+        panel.classList.remove('translate-y-full');
+      });
+    }
+
+    function closeAiSettingsSheet() {
+      const backdrop = document.getElementById('ai-settings-backdrop');
+      const panel = document.getElementById('ai-settings-panel');
+      backdrop.classList.add('opacity-0');
+      panel.classList.add('translate-y-full');
+      setTimeout(() => { backdrop.classList.add('hidden'); }, 300);
+    }
+
+    // =========================================================================
+    // 23. トースト表示
+    // =========================================================================
+    function showToast(message) {
+      const box = document.getElementById('toast-msg');
+      const text = document.getElementById('toast-text');
+      text.textContent = message;
+      box.classList.remove('opacity-0', 'translate-y-2');
+      box.classList.add('opacity-100', 'translate-y-0');
+
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        box.classList.remove('opacity-100', 'translate-y-0');
+        box.classList.add('opacity-0', 'translate-y-2');
+      }, 2200);
+    }
+  </script>
+</body>
+</html>
